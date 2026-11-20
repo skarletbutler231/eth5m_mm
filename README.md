@@ -32,9 +32,9 @@ RTDS `eth/usd`, Binance `ETHUSDT` (spot, perp, 1 s klines) and Coinbase `ETH-USD
 
 1. **The flow-FV model (`models/flowfv-h2.json`) was trained on BTC.** Its strongest inputs carry over: the perp's
    returns in bp and book imbalance. But the book-size and order-flow features (in shares) and σ sit at different levels on ETH.
-   It runs (`FLOW_FV=on`, as on BTC) but is out of distribution. Retrain it on ETH windows recorded by this bot
-   (`data/windows/`) with the BTC repo's `tools/flowfv/` pipeline once a few days are recorded, or compare with `FLOW_FV=off`
-   on the challenger. The same goes for the pair trade's leg-2 model (`models/l2-h5.json`, off by default).
+   It runs (`FLOW_FV=on`, as on BTC) but is out of distribution. Retrain it on ETH with `tools/flowfv/retrain.sh` on the
+   Helsinki box (pmqb's L2 recorder, eth-5m, plus CryptoHFTData's Binance books; `tools/flowfv/README.md`), or compare
+   with `FLOW_FV=off` on the challenger. The same goes for the pair trade's leg-2 model (`models/l2-h5.json`, off by default).
 2. **Thresholds tuned on BTC's record:** `MM_JUMP_BPS=1` (ETH moves more per second, so it fires more often), the race and
    depth-cap rules (`MM_RACE_SHARE`, `MM_JOIN_MAX_REL`), the vol cap, the regime spread `MM_REGIME_BUSY_SPR` and
    `config/hour-regimes.json` (BTC's hours; `MM_HOUR_REGIME` is off). Treat them as starting values for the ETH paper record.
@@ -79,4 +79,4 @@ paper exchange, live venue, orders, vault · `src/engine.ts` the loop · `src/se
 `tools/` live latency / take tests, signal tap, pair report.
 
 Not ported: the BTC repo's research platforms (`agents/`, `tailguard/`, `inventory/`, `latency/`, `session/`, `sweep/`),
-its Python study tools under `tools/*/`, and its recorded data.
+its Python study tools under `tools/*/` (except `tools/flowfv/`, ported for ETH), and its recorded data.
