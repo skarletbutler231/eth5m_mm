@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "fitted": "2026-11-17 tools/hourregime walkforward g2: regimes 2026-10-13\u21922026-11-16, configs 2026-11-05\u21922026-11-16 \u2014 walk-forward FAILED (reports/Hour regimes walk-forward.md): for MM_HOUR_REGIME=shadow only, do not run it 'on'",
+  "source": "tools/hourregime (README 'Hour-of-day regimes')",
+  "regimes": [
+    {
+      "name": "A",
+      "hours": [
+        0,
+        1,
+        2,
+        3,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "knobs": {},
+      "note": "base: +0.000 \u00b1 0.000 $/window vs base on 1287 replayed windows"
+    },
+    {
+      "name": "B",
+      "hours": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "knobs": {},
+      "note": "base: +0.000 \u00b1 0.000 $/window vs base on 1202 replayed windows"
+    },
+    {
+      "name": "C",
+      "hours": [
+        13,
+        14,
+        15,
+        16
+      ],
+      "knobs": {
+        "MM_HALF_SPREAD": "0.01"
+      },
+      "note": "hs10: +0.821 \u00b1 0.606 $/window vs base on 528 replayed windows"
+    }
+  ]
+}

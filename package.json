@@ -1,0 +1,33 @@
+{
+  "name": "eth5m-mm-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Polymarket ETH 5-minute Up/Down market maker (port of btc5m-mm-bot; MM_ASSET=eth|btc): Asian-digital fair value, live order book, sub-second dashboard. Paper by default; MM_MODE=live trades real money.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/selftest.ts",
+    "live:check": "tsx src/liveCheck.ts",
+    "vault:init": "tsx src/vaultCli.ts init",
+    "vault:edit": "tsx src/vaultCli.ts edit",
+    "vault:verify": "tsx src/vaultCli.ts verify",
+    "vault:passwd": "tsx src/vaultCli.ts passwd",
+    "unlock": "tsx src/vaultCli.ts unlock",
+    "live:latency": "tsx tools/latency-test.ts",
+    "signal:tap": "tsx tools/signal-tap.ts",
+    "pair:report": "tsx tools/pair-report.ts"
+  },
+  "dependencies": {
+    "@polymarket/client": "0.6.0",
+    "tsx": "^4.19.2",
+    "viem": "2.55.17",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}

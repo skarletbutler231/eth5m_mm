@@ -83,9 +83,6 @@ out
 dist
 .output
 
-# NitroJS
-.nitro/
-
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js
@@ -148,10 +145,34 @@ vite.config.ts.timestamp-*
 # Astro generated types
 .astro/
 
-# Turbo Repo (https://turborepo.dev/)
+# Turbo Repo
 .turbo
 
-# Nx (https://nx.dev/)
-.nx/cache
-.nx/workspace-data
-.nx/migrate-runs
+# eth5m_mm (from btc5m_mm_bot): the encrypted wallet vault (src/trading/vault.ts) and its unlock sockets
+wallet.vault
+wallet.vault.tmp-*
+# the live challenger's own wallet (ecosystem.config.cjs btc5m-mm-challenger-live)
+wallet-challenger.vault
+wallet-challenger.vault.tmp-*
+.vault/
+
+# recorded windows, paper/live state and logs
+data/
+data-live/
+data-pair-live/
+data-pair/
+# the tailguard agent (README "Tailguard agent"): its dataset, replay cache, ledger, status; the paper challenger
+data-tailguard/
+data-challenger/
+data-challenger-live/
+# archived challenger runs (data-challenger.<setup>-<date>/, see data-challenger/cmp.py)
+data-challenger.*/
+# the research platform (README "Research agents"): findings board, Codex verifier runs; the paircost team's data
+data-agents/
+data-latency/
+data-inventory/
+data-session/
+
+# Python study artefacts: per-study data dirs and bytecode caches
+tools/*/data/
+__pycache__/

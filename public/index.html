@@ -1,0 +1,1810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{{ASSET}}5M MM — paper market maker</title>
+<style>
+  /* Palette and card system ported from pmqb packages/dashboard/public/index.html. */
+  :root{--bg:#0a0e16;--panel:#111722;--line:#1e2735;--muted:#76849b;--text:#dde5f0;
+        --blue:#3b82f6;--green:#2ecc71;--red:#e5484d;--amber:#e0a92b;--purple:#8b5cf6;--cyan:#22d3ee;--pink:#f472b6;--orange:#fb923c;--fv:#60a5fa;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px ui-monospace,Menlo,monospace}
+  header{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:14px;margin:0;letter-spacing:.5px}
+  .muted{color:var(--muted)}
+  main{display:flex;flex-direction:column;gap:14px;padding:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+  .card h2{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin:0 0 10px}
+  .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--line)}
+  .row span:first-child{color:var(--muted)}
+  .row span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+  svg{width:100%;display:block}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .pill{padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;background:#131b2a}
+  .pill.ok{color:var(--green);background:#0f2417} .pill.bad{color:var(--red);background:#2a1414} .pill.warn{color:var(--amber);background:#1a1c14}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:20px;overflow:hidden;font-size:11px;font-weight:700}
+  .seg>*{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;white-space:nowrap}
+  .seg .on.paper{color:var(--amber);background:#1a1c14} .seg .on.live{color:var(--red);background:#2a1414}
+  .seg a{color:var(--muted);text-decoration:none} .seg a:hover{color:var(--text);background:#131b2a}
+  .seg .down{color:var(--muted);opacity:.55;cursor:help} .seg .dot{width:6px;height:6px}
+  .seg .pend{color:var(--amber);background:#1a1c14} .seg .lbl{color:var(--muted);font-weight:400}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  /* ---- window charts, ported from pmqb ---- */
+  .btchead{display:flex;align-items:flex-start;gap:22px;flex-wrap:wrap;margin-bottom:6px}
+  .btchead .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .btchead .big{font-size:22px;font-weight:800;margin-top:2px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .btchead .clock{margin-left:auto;text-align:right}
+  /* SVGs stay in flow at a FIXED pixel height: fitSvg() writes the viewBox from the element's own box,
+     so a height that depends on the viewBox would be a feedback loop (pmqb, 2026-09-09). */
+  #btcwrap,#pmwrap,#eqwrap{position:relative}
+  .chartcols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .chartcols>*{min-width:0}
+  @media (max-width:1180px){ .chartcols{grid-template-columns:1fr} }
+  #btcsvg,#pmsvg{width:100%;height:300px;display:block;cursor:crosshair}
+  .btcmuted{fill:var(--muted);font-size:12px;font-family:ui-monospace,Menlo,monospace}
+  .xhair{stroke:var(--muted);stroke-width:1;opacity:.5;pointer-events:none}
+  .xdot{pointer-events:none;stroke:#0d131c;stroke-width:2}
+  .charttip{position:absolute;top:0;pointer-events:none;z-index:5;display:none;transform:translateX(-50%);white-space:nowrap;
+    background:#111a27;border:1px solid var(--line);border-radius:6px;padding:4px 8px;box-shadow:0 2px 10px rgba(0,0,0,.45)}
+  .charttip .p{font-size:13px;font-weight:700}
+  .charttip .t{font-size:10px;color:var(--muted);margin-top:1px}
+  .charttip .why{white-space:normal;max-width:300px;padding-left:8px}
+  .pmctl{display:flex;gap:9px;flex-wrap:wrap;text-transform:none;letter-spacing:0;font-size:10px}
+  .pmctl label{cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+  .pmctl input[type=checkbox]{width:11px;height:11px;margin:0}
+  .featgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:0 18px;margin-top:8px;font-size:12px}
+  @media (max-width:640px){ .featgrid{grid-template-columns:1fr} }
+  /* ---- top row: order book + recent windows (pmqb's traders + side list slot) ---- */
+  .topcols{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px;align-items:stretch}
+  .topcols>*{min-width:0}
+  .sidecard{display:flex;flex-direction:column}
+  .sidewrap{position:relative;flex:1 1 auto;min-height:280px}
+  .sidelist{position:absolute;inset:0;overflow:auto;font-size:12px}
+  @media (max-width:1300px){ .topcols{grid-template-columns:1fr} .sidewrap{flex:none;min-height:0} .sidelist{position:static;height:420px} }
+  .slrow{display:grid;grid-template-columns:44px 1fr auto;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px solid #141b27;cursor:pointer;border-radius:5px}
+  .slrow:hover{background:#0e1420}
+  .slrow.sel{background:#141d2c;box-shadow:inset 2px 0 0 var(--blue)}
+  .slrow .t{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px}
+  .slrow .m{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .slbtn{font:inherit;font-size:10px;letter-spacing:.4px;color:var(--text);background:#0e1420;border:1px solid var(--line);border-radius:5px;padding:2px 7px;cursor:pointer}
+  .slbtn:hover{border-color:var(--muted)}
+  .badge{padding:0 5px;border-radius:4px;font-size:10px;font-weight:700}
+  .pinbar{display:flex;align-items:center;gap:10px;background:#141d2c;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;flex-wrap:wrap}
+  /* ---- order book ---- */
+  .books{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:760px){ .books{grid-template-columns:1fr} }
+  .bookhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:12px}
+  .bookhead .tok{font-weight:800;font-size:13px}
+  table.lad{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px;table-layout:fixed}
+  table.lad th{font-size:10px;color:var(--muted);font-weight:600;text-align:right;padding:1px 6px;border-bottom:1px solid var(--line)}
+  table.lad th:first-child,table.lad td.p{text-align:left}
+  table.lad td{padding:1px 6px;text-align:right;white-space:nowrap;height:18px}
+  table.lad td.p{font-weight:700}
+  table.lad tr.ask td.p{color:var(--red)} table.lad tr.bid td.p{color:var(--green)}
+  table.lad td.d{padding:1px 0}
+  table.lad .bar{height:12px;border-radius:2px;opacity:.28}
+  table.lad tr.ask .bar{background:var(--red);margin-left:auto} table.lad tr.bid .bar{background:var(--green)}
+  table.lad tr.cheap td{background:rgba(96,165,250,.10)}
+  table.lad tr.rich td{background:rgba(96,165,250,.10)}
+  table.lad tr.chg td.s{color:#fff;background:#24344d}
+  table.lad tr.mm td{box-shadow:inset 0 1px 0 var(--purple),inset 0 -1px 0 var(--purple)}
+  table.lad tr.mm.pend td{box-shadow:inset 0 1px 0 rgba(139,92,246,.45),inset 0 -1px 0 rgba(139,92,246,.45)}
+  table.lad td.d{position:relative}
+  table.lad .mmq{position:absolute;top:2px;font-size:10px;font-weight:800;color:var(--purple);white-space:nowrap;pointer-events:none}
+  table.lad tr.ask .mmq{left:4px} table.lad tr.bid .mmq{right:4px}
+  table.lad tr.ours td.s{color:var(--muted)}
+  table.lad tr.midrow td{border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;text-align:center;height:22px}
+  table.lad tr.empty td{color:#2b374d}
+  .qline{font-size:11px;margin-top:6px}
+  /* ---- scorecard ---- */
+  table.score{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+  table.score th,table.score td{padding:4px 8px;border-bottom:1px solid #141b27;text-align:right;white-space:nowrap}
+  table.score th{color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.6px}
+  table.score td:first-child,table.score th:first-child{text-align:left;color:var(--muted)}
+  table.score tr.sec td{color:var(--text);font-size:10px;text-transform:uppercase;letter-spacing:.8px;padding-top:9px;border-bottom:1px solid var(--line)}
+  .best{color:var(--green);font-weight:800}
+  .scorewrap{overflow-x:auto}
+  /* ---- paper trading ---- */
+  .tradecols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr);gap:14px;align-items:stretch}
+  .tradecols>*{min-width:0}
+  @media (max-width:1450px){ .tradecols{grid-template-columns:1fr 1fr} .tradecols>.wide{grid-column:1/-1} }
+  @media (max-width:900px){ .tradecols{grid-template-columns:1fr} }
+  .blotcols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:stretch}
+  .blotcols>*{min-width:0}
+  @media (max-width:1300px){ .blotcols{grid-template-columns:1fr} }
+  .kpis{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+  .kpis .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .kpis .big{font-size:20px;font-weight:800;margin-top:2px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .sub{display:flex;gap:8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:12px 0 4px}
+  .sub .r{margin-left:auto;text-transform:none;letter-spacing:0}
+  .gauge{position:relative;height:14px;background:#0d131c;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .gauge .gbar{position:absolute;top:0;bottom:0;transition:left .15s,width .15s}
+  .gauge .gmid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--muted)}
+  .gauge .gwarn{position:absolute;top:0;bottom:0;width:1px;background:var(--amber);opacity:.6}
+  .glab{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px}
+  ol.steps{list-style:none;margin:0;padding:0;counter-reset:st;font-size:12px}
+  ol.steps li{display:grid;grid-template-columns:16px 78px minmax(0,1fr);gap:8px;padding:3px 0;border-bottom:1px dashed var(--line);align-items:baseline}
+  ol.steps li::before{counter-increment:st;content:counter(st);color:var(--muted);font-size:10px;text-align:right}
+  ol.steps .k{font-weight:700}
+  ol.steps .v{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  ol.steps li.s-info .k{color:var(--fv)} ol.steps li.s-ok .k{color:var(--green)} ol.steps li.s-warn .k{color:var(--amber)}
+  ol.steps li.s-off .k,ol.steps li.s-off .v{color:var(--red)}
+  .act{display:inline-block;min-width:64px;text-align:center;padding:0 5px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:.5px;margin-right:6px}
+  .act.keep{background:#132235;color:var(--fv)} .act.place{background:#0f2417;color:var(--green)} .act.replace{background:#1a1c14;color:var(--amber)}
+  .act.cancel{background:#2a1414;color:var(--red)} .act.hold{background:#1d1630;color:var(--purple)} .act.idle,.act.skip{background:#141b27;color:var(--muted)}
+  .act.take{background:#2a2010;color:var(--amber)}
+  .actrow{display:grid;grid-template-columns:28px auto minmax(0,1fr);gap:4px;align-items:baseline;padding:2px 0}
+  table.tt{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+  table.tt th{font-size:10px;color:var(--muted);font-weight:600;text-align:right;padding:2px 6px;border-bottom:1px solid var(--line);white-space:nowrap;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0;background:var(--panel)}
+  table.tt td{padding:2px 6px;text-align:right;border-bottom:1px solid #141b27;white-space:nowrap}
+  table.tt th.l,table.tt td.l{text-align:left}
+  table.tt td.note{white-space:normal;color:var(--muted);text-align:left;min-width:180px;font-size:11px}
+  table.tt tr.done td{opacity:.42}
+  table.tt tr.hl td{background:#16203a}
+  table.tt tr.tot td{border-top:1px solid var(--line);color:var(--text);font-weight:700}
+  table.tt.agg{table-layout:fixed}
+  table.tt.agg td{white-space:normal;overflow-wrap:anywhere}
+  table.tt.agg th{overflow:hidden;text-overflow:ellipsis}
+  table.tt.agg th.s{text-transform:none;letter-spacing:0}   /* setup names as written (v6, v6-xs); a long old tag is clipped, hover shows it */
+  table.tt.agg td:first-child,table.tt.agg th:first-child{width:40%;text-align:left;color:var(--muted)}
+  table.tt.agg.ab td:first-child,table.tt.agg.ab th:first-child{width:26%}
+  table.tt tr.why td{border-bottom:1px solid #1b2433;padding-top:0;color:var(--muted);font-size:10.5px;white-space:normal;text-align:left}
+  table.tt tr.main td{border-bottom:none}
+  table.tt td.wrap{white-space:normal;min-width:150px;text-align:left;color:var(--muted);font-size:11px}
+  .list1{display:grid;grid-template-columns:1fr;font-size:12px;margin-top:8px}
+  .qbar{display:inline-block;width:54px;height:6px;background:#1b2433;border-radius:3px;vertical-align:middle;margin-right:6px;overflow:hidden}
+  .qbar i{display:block;height:100%;background:var(--purple)}
+  .ev{display:inline-block;min-width:68px;text-align:center;border-radius:4px;font-size:10px;font-weight:800;padding:0 4px}
+  .ev.place{background:#13213a;color:var(--blue)} .ev.live{background:#0e2329;color:var(--cyan)} .ev.cancel{background:#1a1c14;color:var(--amber)}
+  .ev.cancelled{background:#141b27;color:var(--muted)} .ev.reject{background:#2a1414;color:var(--red)} .ev.fill{background:#0f2417;color:var(--green)}
+  .ev.settle{background:#1d1630;color:var(--purple)} .ev.info{background:#141b27;color:var(--text)}
+  .st{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+  .st.pending{color:var(--blue)} .st.open{color:var(--green)} .st.cancelling{color:var(--amber)} .st.filled{color:var(--green)} .st.cancelled{color:var(--muted)} .st.rejected{color:var(--red)}
+  /* The page re-renders 10×/s. Every live region keeps a fixed height and scrolls inside itself, so nothing above
+     what you are reading changes size. Page-level scroll anchoring is off: Chrome anchored on the blotter, whose
+     new rows go in at the top, and dragged the whole page along with it. */
+  html,body{overflow-anchor:none}
+  .scroll{height:430px;overflow:auto}
+  #qd-target{min-height:38px}
+  #qd-steps{height:380px;overflow:auto}
+  #qd-acts{height:84px;overflow:auto}
+  #i-settling{height:54px;overflow:auto}
+  #ob-quote{min-height:26px}
+  .featgrid .row span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .featgrid .row span:last-child{white-space:nowrap}
+  #blot.noflow tr.flow,#blot.nofill tr.t-fill,#blot.norej tr.t-reject,#blot.noset tr.t-settle,#blot.noset tr.t-info{display:none}
+  #qmap,#eqsvg{width:100%;display:block}
+  #eqsvg{cursor:crosshair}
+  #invsvg{width:100%;height:78px;display:block;cursor:crosshair}
+  .shadowbox{color:var(--muted);font-size:12px;padding:18px 4px;text-align:center}
+  .slbtn.danger{color:var(--red);border-color:#5a2a2c}
+  .slbtn.danger:hover{background:#2a1414;border-color:var(--red)}
+  .slbtn:disabled{opacity:.5;cursor:default}
+  .slbtn.on{background:#141d2c;border-color:var(--blue);color:var(--blue)}
+  .eqper{display:inline-flex;gap:3px;text-transform:none;letter-spacing:0}
+  .eqper .slbtn{padding:0 6px}
+  .rstbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#1d1214;border:1px solid #5a2a2c;border-radius:7px;padding:7px 9px;margin:0 0 10px;font-size:12px}
+  .rstbar input{width:96px;text-align:right}
+  #log{height:120px;overflow:auto;font-size:11px}
+  /* the header's STOP / START and the panel's order-size switch (control.ts, api/control) */
+  .runbtn{font:inherit;font-size:11px;font-weight:800;letter-spacing:.6px;border-radius:20px;padding:2px 11px;cursor:pointer;border:1px solid}
+  .runbtn.run{color:var(--red);background:#2a1414;border-color:#5a2a2c} .runbtn.run:hover{border-color:var(--red)}
+  .runbtn.stopped{color:var(--green);background:#0f2417;border-color:#1f5a35} .runbtn.stopped:hover{border-color:var(--green)}
+  .runbtn:disabled{opacity:.5;cursor:default}
+  #sizeseg{text-transform:none;letter-spacing:0}
+  #log div{padding:1px 0;border-bottom:1px solid #141b27}
+</style>
+</head>
+<body>
+<header>
+  <h1>◆ {{ASSET}}5M-MM</h1><span id="twin" class="seg" style="display:none"></span><span id="prof" class="seg" style="display:none"></span><span class="muted">{{ASSET}} 5-min market maker</span>
+  <span id="utcclock" class="pill" style="color:var(--cyan)" title="UTC">—</span>
+  <span id="pill-mode" class="pill" title="MM_MODE: paper = quotes become simulated orders against the live book · shadow = quotes are only drawn · live = REAL orders on Polymarket">—</span>
+  <span id="pill-eq" class="pill" title="paper equity · total PnL since the account started">—</span>
+  <button id="runbtn" class="runbtn" style="display:none" onclick="ctlRun()"></button>
+  <span id="pill-sess" class="pill" style="display:none"></span>
+  <span style="flex:1"></span>
+  <span id="pill-bin" class="pill" title="Binance {{BINANCE}} best bid/offer — the model's main price input">BIN —</span>
+  <span id="pill-perp" class="pill" title="Binance USD-M perp top of book — the flow FV's strongest input · cs = via the CryptoStruct relay · updates/s · exchange→server">PERP —</span>
+  <span id="pill-cb" class="pill" title="Coinbase {{COINBASE}} top of book — blended with Binance in the nowcast · updates/s · exchange→server">CB —</span>
+  <span id="pill-cl" class="pill" title="Chainlink {{CHAINLINK}} spot + TWAP via Polymarket RTDS — the settlement source">CL —</span>
+  <span id="pill-pm" class="pill" title="Polymarket CLOB market socket — event-level Up/Down books">PM —</span>
+  <span id="pill-hz" class="pill" title="dashboard frames received per second">— Hz</span>
+  <span id="conn" class="muted"><span class="dot" style="background:var(--red)"></span> connecting…</span>
+</header>
+
+<main>
+  <!-- PAPER TRADING — what the bot holds, how it decided this frame's quote, and the orders that quote became. -->
+  <div class="tradecols">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Inventory &amp; PnL</span>
+        <span id="inv-sub" class="muted" style="text-transform:none;letter-spacing:0"></span>
+        <span id="sizeseg" class="seg" style="display:none"></span>
+        <span style="margin-left:auto;display:flex;gap:4px">
+          <button class="slbtn danger" id="rp-open" onclick="rpToggle(true)" title="PnL restarts at zero from now; cash, inventory and orders stay">reset PnL…</button>
+          <button class="slbtn danger" id="rst-open" onclick="rstToggle(true)" title="start a fresh paper account">reset account…</button>
+          <button class="slbtn" id="ws-open" onclick="wsToggle(true)" style="display:none" title="book the wallet's USDC minus the booked cash as a deposit; PnL stays">sync to wallet…</button>
+        </span>
+      </h2>
+      <div class="rstbar" id="rp" style="display:none">
+        <span><b>Reset PnL to zero?</b> Cash, inventory and open orders stay; what is held is carried at its current mark. PnL, the equity curve and the stats count from here<span id="rp-eq"></span>.<span id="rp-live"></span></span>
+        <button class="slbtn danger" id="rp-go" onclick="pnlReset()">reset PnL</button>
+        <button class="slbtn" onclick="rpToggle(false)">cancel</button>
+        <span id="rp-msg" class="muted"></span>
+      </div>
+      <div class="rstbar" id="rst" style="display:none">
+        <span><b>Reset the paper account?</b> Every order is cancelled, all inventory is dropped, and equity, PnL and stats restart from</span>
+        <span>$<input type="number" id="rst-amt" class="slbtn" min="1" max="10000000" step="100" value="1000"></span>
+        <button class="slbtn danger" id="rst-go" onclick="paperReset()">reset</button>
+        <button class="slbtn" onclick="rstToggle(false)">cancel</button>
+        <span id="rst-msg" class="muted"></span>
+      </div>
+      <div class="rstbar" id="ws" style="display:none">
+        <span><b>Sync the account to the wallet?</b> <span id="ws-txt">reading the wallet…</span></span>
+        <button class="slbtn danger" id="ws-go" onclick="walletSync()" disabled>sync</button>
+        <button class="slbtn" onclick="wsToggle(false)">cancel</button>
+        <span id="ws-msg" class="muted"></span>
+      </div>
+      <div id="inv-body">
+        <div class="kpis">
+          <div><div class="lbl">Equity</div><div class="big" id="k-eq">—</div></div>
+          <div><div class="lbl">PnL total</div><div class="big" id="k-pnl">—</div></div>
+          <div><div class="lbl">PnL today</div><div class="big" id="k-today">—</div></div>
+          <div><div class="lbl">This window</div><div class="big" id="k-win">—</div></div>
+        </div>
+        <div class="list1">
+          <div class="row"><span>Up held · avg cost</span><span id="i-up">—</span></div>
+          <div class="row"><span>Down held · avg cost</span><span id="i-dn">—</span></div>
+          <div class="row" title="inventory marked at the mid (FV when the book is not good)"><span>mark · value</span><span id="i-mark">—</span></div>
+          <div class="row" title="this window's PnL if it settles UP / DOWN — the binary risk being carried"><span>PnL if UP / DOWN</span><span id="i-scen">—</span></div>
+          <div class="row" title="edge = Σ (FV − price) × size at each fill, signed for our side: what the fills were worth by the model at that instant. Drift = window PnL − edge: what the market did to them after (adverse selection when negative)."><span>edge at fill · drift</span><span id="i-edge">—</span></div>
+          <div class="row"><span>fills · Up / Down bought</span><span id="i-fills">—</span></div>
+          <div class="row" title="maker fills by what our order was doing when it filled: cancel in flight = our cancel was already sent (the taker beat it to the venue); no cancel = it was resting, nothing sent. Takes are neither."><span>maker fills: cancel in flight / no cancel</span><span id="i-cxl">—</span></div>
+          <div class="row" title="Up + Down pairs redeemed for $1: how many, what one pair cost on average, and what they locked in"><span>pairs merged · avg cost · locked</span><span id="i-pairs">—</span></div>
+          <div class="row" title="orders this window: placed / cancelled / rejected (post-only)"><span>orders placed / cxl / rej</span><span id="i-ord">—</span></div>
+          <div class="row" title="USDC: cash · reserved by open bids (p·size; asks lock the Up shares they sell, not USDC) · free"><span>cash · reserved · free</span><span id="i-cash">—</span></div>
+        </div>
+        <div id="i-settling"></div>
+        <div class="sub" style="align-items:center;flex-wrap:wrap"><span>Equity since <span id="eq-since">—</span></span>
+          <span class="eqper" id="eq-per" title="the equity curve's period: PnL, return and max drawdown count from the equity at its start">
+            <button class="slbtn" data-p="1h" onclick="setEqPer('1h')">1h</button><button class="slbtn" data-p="1d" onclick="setEqPer('1d')">1d</button><button class="slbtn" data-p="1w" onclick="setEqPer('1w')">1w</button><button class="slbtn" data-p="1m" onclick="setEqPer('1m')">1m</button><button class="slbtn" data-p="all" onclick="setEqPer('all')">all</button>
+          </span><span class="r" id="eq-txt"></span></div>
+        <div id="eqwrap">
+          <svg id="eqsvg" viewBox="0 0 600 120" style="height:120px"><g id="eq-g"></g><line id="eq-xhair" class="xhair" style="display:none"/><circle id="eq-xdot" class="xdot" r="4" style="display:none"/></svg>
+          <div id="eq-tip" class="charttip" style="transform:none"></div>
+        </div>
+        <table class="tt agg" id="aggtbl" style="margin-top:8px"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Quote decision — this frame</span>
+        <span id="qd-sub" class="muted" style="text-transform:none;letter-spacing:0;margin-left:auto"></span>
+      </h2>
+      <div id="qd-target" style="font-size:15px;font-weight:800;margin-bottom:4px">—</div>
+      <svg id="qmap" viewBox="0 0 600 70" style="height:70px"></svg>
+      <div class="muted" style="font-size:10px;margin:0 0 6px;line-height:1.6">
+        <span style="white-space:nowrap"><span style="color:var(--green)">▮</span> bid</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--red)">▮</span> ask</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--fv)">◆</span> FV</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--amber)">◆</span> centre</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--purple)">┊</span> reservation = centre − skew</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--purple)">[ ]</span> target</span> ·
+        <span style="white-space:nowrap"><span style="color:var(--purple)">●</span> our order (○ in flight)</span>
+      </div>
+      <ol class="steps" id="qd-steps"></ol>
+      <div class="sub"><span>Order manager → paper exchange</span></div>
+      <div id="qd-acts" style="font-size:12px"></div>
+    </div>
+
+    <div class="card wide">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Working orders — paper</span>
+        <span id="wo-sub" class="muted" style="text-transform:none;letter-spacing:0;margin-left:auto"></span>
+      </h2>
+      <div class="scroll" style="height:330px"><table class="tt" id="wo"></table></div>
+      <div class="muted" style="font-size:11px;margin-top:8px;line-height:1.55">
+        <b>Paper fills against the live book.</b> Each order takes the latency to reach the book, is rejected if it would cross
+        (post-only), and joins the <b>back</b> of its price level. It moves up as prints at its price eat the queue and when the level
+        shrinks below it; cancels are assumed to come from behind it. It fills when prints at its price pass the queue (<b>queue</b>),
+        when a taker prints through its price (<b>through</b>), or when the other side rests on its price (<b>cross</b>). Prints come from
+        both tokens, Down mapped to Up terms (each match prints on one token only). A cancel in flight can still fill.
+      </div>
+    </div>
+  </div>
+
+  <div class="topcols">
+    <!-- LIVE ORDER BOOK. Both outcome tokens, every event from the CLOB socket folded server-side and
+         pushed every frame. The two books are mirrors (Up bid at p = Down ask at 1-p). -->
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Order book — Up / Down</span>
+        <span id="ob-slug" class="muted" style="text-transform:none;letter-spacing:0">—</span>
+        <span id="ob-stats" class="muted" style="text-transform:none;letter-spacing:0;margin-left:auto"></span>
+      </h2>
+      <div class="books">
+        <div>
+          <div class="bookhead"><span class="tok pos">UP (YES)</span><span id="ob-up-head" class="muted"></span></div>
+          <table class="lad"><colgroup><col style="width:22%"><col style="width:22%"><col style="width:22%"><col></colgroup>
+            <thead><tr><th>price</th><th>size</th><th>total</th><th>depth</th></tr></thead><tbody id="ob-up"></tbody></table>
+        </div>
+        <div>
+          <div class="bookhead"><span class="tok neg">DOWN (NO)</span><span id="ob-dn-head" class="muted"></span></div>
+          <table class="lad"><colgroup><col style="width:22%"><col style="width:22%"><col style="width:22%"><col></colgroup>
+            <thead><tr><th>price</th><th>size</th><th>total</th><th>depth</th></tr></thead><tbody id="ob-dn"></tbody></table>
+        </div>
+      </div>
+      <div class="qline" id="ob-quote"></div>
+      <div class="muted" style="font-size:11px;margin-top:4px">
+        tinted rows = levels the fair value says are mispriced (an ask below FV, a bid above it) ·
+        <span style="color:var(--purple)">MM</span> = our paper order (size · shares ahead of it; faint = in flight), mirrored onto the Down book (an Up bid at p reads as a Down ask at 1 − p) ·
+        a bright size cell changed this frame
+      </div>
+    </div>
+
+    <div class="card sidecard">
+      <h2 style="display:flex;align-items:center;gap:8px">
+        <span>Recent windows</span>
+        <span id="side-sub" class="muted" style="text-transform:none;letter-spacing:0"></span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:4px">
+          <button class="slbtn" onclick="stepDate(-1)" title="previous day with windows">‹</button>
+          <input type="date" id="side-date" class="slbtn" style="padding:2px 4px" onchange="pickDate(this.value)" title="which UTC day to list">
+          <button class="slbtn" onclick="stepDate(1)" title="next day with windows">›</button>
+        </span>
+      </h2>
+      <div class="sidewrap"><div id="side-list" class="sidelist"><div class="muted">loading…</div></div></div>
+    </div>
+  </div>
+
+  <!-- ORDER BLOTTER + FILLS — every step of every order, and what each fill turned out to be worth. -->
+  <div class="blotcols">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Order blotter</span>
+        <span id="bl-sub" class="muted" style="text-transform:none;letter-spacing:0"></span>
+        <span class="pmctl" style="margin-left:auto">
+          <label style="color:var(--blue)"><input type="checkbox" id="ck-bl-flow" onchange="blotFilter()" checked>place / live / cancel</label>
+          <label style="color:var(--green)"><input type="checkbox" id="ck-bl-fill" onchange="blotFilter()" checked>fills</label>
+          <label style="color:var(--red)"><input type="checkbox" id="ck-bl-rej" onchange="blotFilter()" checked>rejects</label>
+          <label style="color:var(--purple)"><input type="checkbox" id="ck-bl-set" onchange="blotFilter()" checked>settlement</label>
+        </span>
+      </h2>
+      <div class="scroll"><table class="tt" id="blot">
+        <thead><tr><th class="l">time</th><th>#</th><th class="l">event</th><th class="l">order</th><th class="l">detail</th></tr></thead>
+        <tbody id="blot-body"></tbody></table></div>
+      <div class="muted" style="font-size:11px;margin-top:6px">newest first · hover a row to highlight every event of that order</div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Fills &amp; markouts</span>
+        <span id="fl-sub" class="muted" style="text-transform:none;letter-spacing:0"></span>
+      </h2>
+      <div class="scroll"><table class="tt" id="fills"></table></div>
+      <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.5">
+        all in ¢ per share, signed so <span class="pos">+</span> is good for us · <b>edge</b> = FV − price at the fill ·
+        <b>1 s / 5 s / 30 s</b> = mid then − price (adverse selection when negative; blank if the window closed first) ·
+        <b>settle</b> = payoff − price once the window settles
+      </div>
+      <!-- live net position, at the card's foot so it sits right above the market price chart -->
+      <div id="netpos" style="margin-top:auto">
+        <div class="sub"><span>Net position · Up − Down shares</span><span class="r" id="g-txt" style="color:var(--text)"></span></div>
+        <div class="gauge"><div class="gbar" id="g-bar"></div><div class="gmid"></div></div>
+        <div class="glab"><span id="g-min">−100</span><span>flat</span><span id="g-max">+100</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pinbar" id="pinbar" style="display:none">
+    <span id="pin-txt"></span>
+    <button class="slbtn" style="margin-left:auto" onclick="unpinWindow()">← back to live</button>
+  </div>
+
+  <!-- WINDOW CHARTS — underlying left, contract right, one shared 0-5m axis (zoom one, both follow). -->
+  <div class="chartcols">
+    <div class="card">
+      <h2>{{ASSET_LONG}} Up or Down 5m <span id="btc-slug" class="muted" style="text-transform:none;letter-spacing:0">—</span></h2>
+      <div class="btchead">
+        <div><div class="lbl">Price to beat</div><div class="big" id="btc-target">—</div></div>
+        <div><div class="lbl">Chainlink spot</div><div class="big" id="btc-price" style="color:var(--amber)">—</div></div>
+        <div><div class="lbl">CL TWAP 60s</div><div class="big" id="btc-twap" style="color:var(--cyan);font-size:18px">—</div></div>
+        <div><div class="lbl">Move</div><div class="big" id="btc-delta">—</div></div>
+        <div class="clock"><div class="lbl" id="btc-clock-lbl">Time left</div><div class="big" id="btc-clock">—</div></div>
+      </div>
+      <div id="btcwrap">
+        <svg id="btcsvg" viewBox="0 0 600 210">
+          <defs><clipPath id="btcclip"><rect id="btccliprect" x="0" y="0" width="600" height="210"/></clipPath></defs>
+          <g id="btc-grid"></g>
+          <line id="btc-targetline" x1="0" x2="600" stroke="var(--muted)" stroke-dasharray="4 4" stroke-width="1" opacity=".8"/>
+          <line id="btc-nowline" stroke="var(--amber)" stroke-dasharray="2 3" stroke-width="1" opacity=".5" style="display:none"/>
+          <g clip-path="url(#btcclip)">
+            <path id="btc-area" fill="var(--amber)" opacity=".10"/>
+            <path id="btc-twapline" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linejoin="round" opacity=".9"/>
+            <path id="btc-binline" fill="none" stroke="var(--purple)" stroke-width="1.4" stroke-linejoin="round" opacity=".95"/>
+            <path id="btc-line" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linejoin="round"/>
+            <circle id="btc-dot" r="3.5" fill="var(--amber)" style="display:none"/>
+          </g>
+          <line id="btc-xhair" class="xhair" style="display:none"/>
+          <circle id="btc-xdot" class="xdot" r="4" fill="var(--amber)" style="display:none"/>
+        </svg>
+        <div id="btc-tip" class="charttip"></div>
+        <div class="muted" style="font-size:11px;margin-top:4px">
+          <span style="color:var(--amber)">━</span> Chainlink spot ·
+          <span style="color:var(--cyan)">━</span> Chainlink TWAP 60s (the settlement series) ·
+          <span style="color:var(--purple)">━</span> Chainlink nowcast = last Chainlink print × Binance/Coinbase move since (the model's price, sub-second) ·
+          dashes = <b>price to beat</b> (Chainlink TWAP-60s at the open) · the window settles UP if the TWAP-60s at the close is at or above it
+        </div>
+      </div>
+      <div class="muted" id="feat-live" style="display:none;font-size:11px;margin-top:8px">⚠ model inputs below are LIVE — not part of the replay</div>
+      <div class="featgrid" id="featgrid">
+        <div class="row" title="EWMA of 1 s Binance log-return variance, half-lives 2 min and 30 min, blended 50/50"><span>σ base (1 s EWMA blend) /√s</span><span id="f-sigbase">—</span></div>
+        <div class="row"><span>σ fast 2m / slow 30m</span><span id="f-sigparts">—</span></div>
+        <div class="row" title="the market's implied vol over σ base, median of the last 20 completed windows (prior 1.10)"><span>κ implied / base</span><span id="f-kappa">—</span></div>
+        <div class="row"><span>σ used = κ·σ base</span><span id="f-sigma">—</span></div>
+        <div class="row" title="error of rebuilding Chainlink's TWAP from the relayed prints"><span>ε TWAP rebuild</span><span id="f-eps">—</span></div>
+        <div class="row" title="Chainlink stamp T ≈ Binance received at T − lag (Binance-only nowcast, Binance strike, basis)"><span>oracle lag</span><span id="f-lag">—</span></div>
+        <div class="row" title="the nowcast's venue move: (1−w)·Binance + w·Coinbase in log terms, each at its own lag; w and the lags are refitted every minute on the last 10 min of Chainlink prints (median of the last 15 fits). Falls back to one venue when the other is stale."><span>nowcast mix</span><span id="f-mix">—</span></div>
+        <div class="row" title="FV on the blended nowcast minus the same FV on Binance alone"><span>blend − Binance-only FV</span><span id="f-blend">—</span></div>
+        <div class="row" title="anchored = Chainlink strike + Chainlink prints + Binance move since the last print; venue = Binance-only fallback"><span>pricer · last CL print</span><span id="f-src">—</span></div>
+        <div class="row" title="ln(Chainlink TWAP60 / Binance 60 s mean)"><span>basis CL vs BIN</span><span id="f-basis">—</span></div>
+        <div class="row" title="last Chainlink print × the blended venue move since — the price the unobserved part of the average is centred on"><span>Chainlink nowcast</span><span id="f-now">—</span></div>
+        <div class="row" title="ln(E[settlement average] / price to beat)"><span>m = ln(E[A]/K)</span><span id="f-m">—</span></div>
+        <div class="row"><span>τ unobserved / τ_eff</span><span id="f-tau">—</span></div>
+        <div class="row" title="√(σ²τ_eff + ε²)"><span>total sd</span><span id="f-sd">—</span></div>
+        <div class="row"><span>branch · realised</span><span id="f-branch">—</span></div>
+        <div class="row"><span>z → FV</span><span id="f-z">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Polymarket market price — YES / NO</span>
+        <span id="pm-slug" class="muted" style="text-transform:none;letter-spacing:0">—</span>
+        <span class="pmctl">
+          <label style="color:var(--fv)"><input type="checkbox" id="ck-pm-fv" onchange="togglePmSeries('fv',this.checked)" style="accent-color:var(--fv)">fair value</label>
+          <label style="color:var(--amber)"><input type="checkbox" id="ck-pm-fva" onchange="togglePmSeries('fva',this.checked)" style="accent-color:var(--amber)">FV anchored</label>
+          <label style="color:var(--cyan)"><input type="checkbox" id="ck-pm-edge" onchange="togglePmSeries('edge',this.checked)" style="accent-color:var(--cyan)">edge FV−YES</label>
+          <label style="color:var(--purple)"><input type="checkbox" id="ck-pm-w" onchange="togglePmSeries('w',this.checked)" style="accent-color:var(--purple)">paper orders</label>
+          <label style="color:var(--purple)"><input type="checkbox" id="ck-pm-q" onchange="togglePmSeries('q',this.checked)" style="accent-color:var(--purple)">target quote</label>
+          <label style="color:var(--text)"><input type="checkbox" id="ck-pm-fills" onchange="togglePmSeries('fills',this.checked)">fills</label>
+          <label style="color:var(--text)"><input type="checkbox" id="ck-pm-orders" onchange="togglePmSeries('orders',this.checked)">orders sent</label>
+        </span>
+        <span id="pm-zoomlbl" class="muted" style="text-transform:none;letter-spacing:0;margin-left:auto"></span>
+        <button id="pm-zoomreset" class="slbtn" style="display:none" onclick="pmZoomReset()">reset zoom</button>
+      </h2>
+      <div class="btchead">
+        <div><div class="lbl">YES (mid)</div><div class="big" id="pm-yes" style="color:var(--green)">—</div></div>
+        <div><div class="lbl">NO (implied)</div><div class="big" id="pm-no" style="color:var(--red)">—</div></div>
+        <div><div class="lbl">Fair value</div><div class="big" id="pm-fv" style="color:var(--fv)">—</div></div>
+        <div><div class="lbl">FV − mid</div><div class="big" id="pm-gap" style="font-size:18px">—</div></div>
+        <div><div class="lbl">Bid / ask</div><div class="big" id="pm-book" style="font-size:18px">—</div></div>
+        <div class="clock"><div class="lbl">Move since open</div><div class="big" id="pm-delta">—</div></div>
+      </div>
+      <div id="pmwrap">
+        <svg id="pmsvg" viewBox="0 0 600 210">
+          <defs><clipPath id="pmclip"><rect id="pmcliprect" x="0" y="0" width="600" height="210"/></clipPath></defs>
+          <g id="pm-grid"></g>
+          <line id="pm-midline" x1="0" x2="600" stroke="var(--muted)" stroke-dasharray="4 4" stroke-width="1" opacity=".8"/>
+          <g clip-path="url(#pmclip)">
+            <path id="pm-line-qb" fill="none" stroke="var(--purple)" stroke-width="1" stroke-dasharray="3 3" opacity=".7" style="display:none"/>
+            <path id="pm-line-qa" fill="none" stroke="var(--purple)" stroke-width="1" stroke-dasharray="3 3" opacity=".7" style="display:none"/>
+            <path id="pm-line-wb" fill="none" stroke="var(--purple)" stroke-width="1.8" opacity=".95" style="display:none"/>
+            <path id="pm-line-wa" fill="none" stroke="var(--pink)" stroke-width="1.8" opacity=".95" style="display:none"/>
+            <path id="pm-line-edge" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-dasharray="4 3" style="display:none"/>
+            <path id="pm-line-no" fill="none" stroke="var(--red)" stroke-width="2" stroke-linejoin="round"/>
+            <path id="pm-line" fill="none" stroke="var(--green)" stroke-width="2" stroke-linejoin="round"/>
+            <path id="pm-line-fva" fill="none" stroke="var(--amber)" stroke-width="1.6" stroke-dasharray="5 3" style="display:none"/>
+            <path id="pm-line-fv" fill="none" stroke="var(--fv)" stroke-width="2" stroke-linejoin="round"/>
+            <circle id="pm-dot-no" r="3.5" fill="var(--red)" style="display:none"/>
+            <circle id="pm-dot" r="3.5" fill="var(--green)" style="display:none"/>
+            <circle id="pm-dot-fv" r="3.5" fill="var(--fv)" style="display:none"/>
+            <g id="pm-orders"></g>
+            <g id="pm-fills"></g>
+          </g>
+          <g id="pm-endlab"></g>
+          <line id="pm-xhair" class="xhair" style="display:none"/>
+          <circle id="pm-xdot-no" class="xdot" r="4" fill="var(--red)" style="display:none"/>
+          <circle id="pm-xdot" class="xdot" r="4" fill="var(--green)" style="display:none"/>
+          <circle id="pm-xdot-fv" class="xdot" r="4" fill="var(--fv)" style="display:none"/>
+        </svg>
+        <div id="pm-tip" class="charttip"></div>
+        <div class="muted" style="font-size:11px;margin-top:4px">
+          <span style="color:var(--green)">━</span> YES (Up mid) · <span style="color:var(--red)">━</span> NO (1 − YES) ·
+          <span style="color:var(--fv)">━</span> fair value (TWAP digital on Chainlink, Binance+Coinbase nowcast, market-implied σ) ·
+          <span style="color:var(--amber)">╌</span> FV anchored (last good mid carried forward by the Binance move) ·
+          <span style="color:var(--cyan)">╌</span> edge FV − YES on the same ¢ scale, zero on the 50¢ line ·
+          <span style="color:var(--purple)">━</span> paper Up bid / <span style="color:var(--pink)">━</span> paper Down bid, drawn as the Up ask it mirrors (1 − its price) ·
+          <span style="color:var(--purple)">┅</span> target quote ·
+          <span style="color:var(--green)">▲</span> bought Up / <span style="color:var(--red)">▼</span> bought Down, at its Up-book price (size ∝ area) ·
+          <span style="color:var(--green)">○</span>/<span style="color:var(--red)">○</span> order sent (Up / Down) at its price on the same Up-book scale, the moment it was sent; ┄ to its first fill, ✕ nothing filled (refused or cancelled; hover it for why); 1 / 2 = the pair's leg<br>
+          fixed 0¢–99¢ axis · resets when the next market opens · <b>scroll to zoom time, drag to pan, double-click to reset</b> (the {{ASSET}} chart follows)
+        </div>
+      </div>
+      <div class="sub"><span>Net position over the window · Up − Down shares</span><span class="r" id="inv-now"></span></div>
+      <svg id="invsvg" viewBox="0 0 600 78">
+        <defs><clipPath id="invclip"><rect id="invcliprect" x="0" y="0" width="600" height="78"/></clipPath></defs>
+        <g id="inv-grid"></g>
+        <g clip-path="url(#invclip)">
+          <path id="inv-area" fill="var(--purple)" opacity=".22"/>
+          <path id="inv-line" fill="none" stroke="var(--purple)" stroke-width="1.6" stroke-linejoin="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- FAIR VALUE SCORECARD — the question this project exists to answer. -->
+  <div class="card">
+    <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>Fair value scorecard — does FV predict the market?</span>
+      <span id="sc-sub" class="muted" style="text-transform:none;letter-spacing:0"></span>
+    </h2>
+    <div class="scorewrap"><table class="score" id="score"></table></div>
+    <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.5">
+      <b>lead</b>: gap g = FV − mid now, move d = mid h later, on seconds with a live ≤3¢ book. <b>hit</b> = share of |g| ≥ 1¢ where the mid moved toward FV
+      (50% = no information); <b>β</b> = how much of the gap the mid closes. A mid that flickers and snaps back also scores here, so read it with
+      <b>settlement</b>: Brier and log loss once a second against the real outcome (lower is better). FV below the market on settlement = FV knew something the book did not.
+    </div>
+  </div>
+
+  <div class="card"><h2>Event log</h2><div id="log"></div></div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const WIN_SEC=300;
+const cents=v=>(v*100).toFixed(1)+"¢";
+const money=x=>"$"+x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const sgnc=v=>(v>=0?"+":"−")+Math.abs(v*100).toFixed(1)+"¢";
+const hhmm=ts=>new Date(ts*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+const usd=x=>x==null||!Number.isFinite(x)?"—":(x>=0?"+$":"−$")+Math.abs(x).toFixed(2);
+const shr=x=>x==null?"—":Math.abs(x)>=1000?(x/1000).toFixed(1)+"k":Math.abs(x)>=100?x.toFixed(0):String(+x.toFixed(2));
+const sgnSh=x=>(x>0?"+":x<0?"−":"")+shr(Math.abs(x));
+const pc=(x,dig=1)=>x==null||!Number.isFinite(x)?'<span class="muted">—</span>':`<span class="${x>=0?"pos":"neg"}">${x>=0?"+":"−"}${Math.abs(x*100).toFixed(dig)}</span>`;
+const hms=t=>{ const d=new Date(t); return d.toLocaleTimeString([], {hour12:false})+"."+Math.floor(d.getMilliseconds()/100); };
+const esc=x=>String(x??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const isWorking=o=>o.status==="pending"||o.status==="open"||o.status==="cancelling";
+// What an order / fill / event really is: an Up or Down bid at its own price. Records from before pairing
+// only carry the Up-book view (side, price).
+const tokOf=x=>x.token?{tok:x.token==="DOWN"?"Down":"Up",side:x.tokenSide||"BUY",px:x.tokenPrice}:{tok:"Up",side:x.side,px:x.price};
+const tokTag=t=>`<span class="${t.tok==="Up"?"pos":"neg"}">${t.tok} ${t.side==="BUY"?"bid":"ask"}</span>`;
+function log(html){
+  const d=document.createElement("div");
+  d.innerHTML=`<span class="muted">${new Date().toLocaleTimeString()}</span> ${html}`;
+  const L=$("log"); L.prepend(d); while(L.children.length>200) L.lastChild.remove();
+}
+
+// ---- data model ----------------------------------------------------------------------------------
+// Rows are the server's frames, one per UI_PUSH_MS: [el, cl, tw, bin, mid, fv, fva, bb, ba, qb, qa, wb, wa, inv].
+// Columns are append-only, so the live (longest) mapping also reads older archives: missing cells are undefined.
+let C={};
+function setCols(cols){ C={}; cols.forEach((k,i)=>C[k]=i); }
+setCols(["el","cl","tw","bin","mid","fv","fva","bb","ba","qb","qa","wb","wa","inv"]);
+// paper trading: the last frame's block, this window's fills, the account's equity history, aggregates
+const TRADING=m=>m==="paper"||m==="live";
+const TRADE={mode:null,cfg:null,last:null,fills:[],eq:[],agg:null,pos:null,posKey:"",posAggT:0,lastSeq:0,fillsDirty:true,aggDirty:true,shadowDone:false,ev:[]};
+const EV_KEEP=3000;   // order events kept for the chart's "orders sent" markers
+const LIVE={meta:null,rows:[],openMid:null};
+let pinned=null;           // {meta, rows, score}
+let lastFrame=null, SCORE=null, uiPushMs=100;
+const frameTimes=[];
+
+// ---- socket --------------------------------------------------------------------------------------
+let ws=null, backoff=500;
+function setConn(on){
+  $("conn").innerHTML=on?'<span class="dot" style="background:var(--green)"></span> live'
+                        :'<span class="dot" style="background:var(--red)"></span> reconnecting…';
+}
+function connect(){
+  const url=(location.protocol==="https:"?"wss://":"ws://")+location.host+location.pathname.replace(/[^/]*$/,"")+"ws";
+  ws=new WebSocket(url);
+  ws.onopen=()=>{ backoff=500; setConn(true); };
+  ws.onclose=()=>{ setConn(false); setTimeout(connect,backoff); backoff=Math.min(backoff*2,10000); };
+  ws.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch{ return; }
+    if(m.type==="hello") onHello(m); else if(m.type==="frame") onFrame(m,false);
+  };
+}
+function onHello(m){
+  setCols(m.cols); uiPushMs=m.uiPushMs||100;
+  if(m.trade){
+    TRADE.mode=m.trade.mode; TRADE.cfg=m.trade.cfg; TRADE.fills=m.trade.fills||[]; TRADE.eq=m.trade.eq||[];
+    TRADE.agg=m.trade.agg; TRADE.fillsDirty=TRADE.aggDirty=true;
+    $("blot-body").innerHTML=""; TRADE.lastSeq=0; TRADE.ev=[]; blotAdd(m.trade.events||[]);
+  }
+  LIVE.meta=m.w; LIVE.rows=(m.rows||[]).slice(); LIVE.openMid=null;
+  for(const r of LIVE.rows){ if(r[C.mid]!=null){ LIVE.openMid=r[C.mid]; break; } }
+  if(m.score) SCORE=m.score;
+  if(m.last) onFrame(m.last,true);
+  log(`connected · window ${LIVE.meta?LIVE.meta.slug:"—"} · ${LIVE.rows.length} frames so far`);
+  schedule();
+}
+function onFrame(f,fromHello){
+  if(!fromHello){ frameTimes.push(performance.now()); while(frameTimes.length>60) frameTimes.shift(); }
+  if(!LIVE.meta || f.w.startTs!==LIVE.meta.startTs){
+    if(LIVE.meta) log(`new window ${f.w.slug}`);
+    LIVE.rows=[]; LIVE.openMid=null; prevBook={};
+    TRADE.fills=[]; TRADE.fillsDirty=true;
+    setTimeout(loadWindows,4000);
+  }
+  const T=f.trade;
+  if(T){
+    TRADE.last=T; TRADE.mode=T.mode;
+    if(T.fills){ TRADE.fills=T.fills; TRADE.fillsDirty=true; }
+    if(T.eq) TRADE.eq=T.eq;
+    if(T.agg){ TRADE.agg=T.agg; TRADE.aggDirty=true; }
+    if(T.ev&&T.ev.length) blotAdd(T.ev);
+  }
+  LIVE.meta=f.w;
+  if(!fromHello) LIVE.rows.push(f.row);
+  if(LIVE.openMid==null && f.row[C.mid]!=null) LIVE.openMid=f.row[C.mid];
+  if(f.score) SCORE=f.score;
+  lastFrame=f;
+  schedule();
+}
+
+// One paint per animation frame, however many socket frames arrived since the last one.
+let raf=0;
+function schedule(){ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; paint(); }); }
+function paint(){
+  const f=lastFrame;
+  if(f){ renderBook(f); renderPills(f); renderModel(f); renderTrade(f); if(!pinned){ renderLiveHeads(f); } }
+  if(TRADE.fillsDirty){ TRADE.fillsDirty=false; renderFills(); }
+  if(TRADE.aggDirty){ TRADE.aggDirty=false; renderAgg(); }
+  drawBtc(); drawPm(); drawInv(); drawEq(); renderScore();
+}
+
+// ---- header pills ----------------------------------------------------------------------------------
+function pill(el,cls,txt){ el.className="pill "+cls; el.textContent=txt; }
+function renderPills(f){
+  const F=f.feeds||{};
+  if(F.bin) pill($("pill-bin"),F.bin.ok?"ok":"bad",`BIN${F.bin.src==="cryptostruct"?" cs":""} ${Math.round(F.bin.rate)}/s`);
+  if(F.perp) pill($("pill-perp"),F.perp.ok?"ok":"bad",`PERP${F.perp.src==="cryptostruct"?" cs":""} ${Math.round(F.perp.rate)}/s · ${F.perp.lagP50!=null?F.perp.lagP50+"ms":"—"}`);
+  if(F.cb) pill($("pill-cb"),F.cb.ok?"ok":"bad",`CB ${Math.round(F.cb.rate)}/s · ${F.cb.lagP50!=null?F.cb.lagP50+"ms":"—"}`);
+  else if(F.bin) pill($("pill-cb"),"",`CB off`);
+  if(F.rtds) pill($("pill-cl"),F.rtds.ok?"ok":"bad",`CL${F.rtds.src==="polybolt"?" PB":F.rtds.src==="rtds"?" RTDS":""} ${F.rtds.spotLag!=null?(F.rtds.spotLag/1000).toFixed(1)+"s lag":"—"}`);
+  if(F.pm) pill($("pill-pm"),F.pm.ok?"ok":"bad",`PM ${Math.round(F.pm.rate)}/s · ${F.pm.lagP50!=null?F.pm.lagP50+"ms":"—"}`);
+  let hz=0;
+  if(frameTimes.length>5){ const dt=(frameTimes[frameTimes.length-1]-frameTimes[0])/1000; hz=dt>0?(frameTimes.length-1)/dt:0; }
+  pill($("pill-hz"),hz>=0.8*1000/uiPushMs?"ok":"warn",`⚡ ${hz.toFixed(1)} Hz`);
+  const T=f.trade;
+  if(T&&T.mode==="live"){ const L=T.live||{}; pill($("pill-mode"),"bad",L.halted?"LIVE · STOPPED":!L.link?"LIVE · NO USER FEED":`LIVE · wallet ${L.balance!=null?money(L.balance):"?"}`); $("pill-mode").title=L.halted||`REAL orders from ${L.wallet} · loss limit −$${L.maxLoss} · post ${L.postMs??"?"} ms, cancel ${L.cancelMs??"?"} ms (medians)${L.chain&&L.chain.length?` · ${L.chain.length} on-chain job(s) queued`:""}`; if(T.acct) pill($("pill-eq"),T.acct.pnl>=0?"ok":"bad",`${money(T.acct.equity)} · ${usd(T.acct.pnl)}`); }
+  else if(T&&T.mode==="paper"){ pill($("pill-mode"),"warn","PAPER"); if(T.acct) pill($("pill-eq"),T.acct.pnl>=0?"ok":"bad",`${money(T.acct.equity)} · ${usd(T.acct.pnl)}`); }
+  else if(T){ pill($("pill-mode"),"","SHADOW"); $("pill-eq").style.display="none"; }
+}
+
+// ---- order book ------------------------------------------------------------------------------------
+const DEPTH=10;
+let prevBook={};
+// mine: our orders as they sit on THIS token's book: [{side:"bid"|"ask", price, size, live, queue}]
+function ladder(id,book,fv,mine,key){
+  const tb=$(id);
+  if(!book||!book.r){ tb.innerHTML=`<tr class="midrow"><td colspan="4">${book?"waiting for snapshot…":"no market"}</td></tr>`; return; }
+  const asks=book.a.slice(0,DEPTH), bids=book.b.slice(0,DEPTH);
+  // an order at a price the real book does not have (e.g. inside the spread) gets its own empty row
+  for(const m of mine){
+    const arr=m.side==="ask"?asks:bids;
+    if(!arr.some(l=>Math.abs(l[0]-m.price)<1e-6)) arr.push([m.price,0,true]);
+  }
+  asks.sort((x,y)=>x[0]-y[0]); bids.sort((x,y)=>y[0]-x[0]);
+  // exactly DEPTH rows a side (a changing row count moves everything below): drop the farthest level that holds no order of ours
+  const ourPx=(arr,cls)=>i=>arr[i][2]||mine.some(m=>m.side===cls&&Math.abs(m.price-arr[i][0])<1e-6);
+  for(const [arr,cls] of [[asks,"ask"],[bids,"bid"]]){
+    const mineAt=ourPx(arr,cls);
+    while(arr.length>DEPTH){ let i=arr.length-1; while(i>=0&&mineAt(i)) i--; arr.splice(i>=0?i:arr.length-1,1); }
+  }
+  let maxS=1; for(const l of asks.concat(bids)) if(l[1]>maxS) maxS=l[1];
+  const prev=prevBook[key]||{}, now={};
+  const row=(cls,l,cum)=>{
+    const [p,s,ours]=l, k=cls+p.toFixed(3); now[k]=s;
+    let c=cls;
+    if(prev[k]!==undefined && prev[k]!==s) c+=" chg";
+    if(fv!=null){ if(cls==="ask"&&p<fv-1e-9) c+=" cheap"; if(cls==="bid"&&p>fv+1e-9) c+=" rich"; }
+    const m=mine.find(x=>x.side===cls&&Math.abs(x.price-p)<1e-6);
+    if(m) c+=" mm"+(m.live?"":" pend");
+    if(ours) c+=" ours";
+    const tag=m?`<span class="mmq">MM ${shr(m.size)}${m.live?` · ${shr(m.queue)} ahead`:m.queue==null?"":" · in flight"}</span>`:"";
+    return `<tr class="${c}"><td class="p">${(p*100).toFixed(p*100%1?1:0)}¢</td><td class="s">${ours?"—":fmtSize(s)}</td><td>${fmtSize(cum)}</td>`
+      +`<td class="d"><div class="bar" style="width:${Math.max(2,100*s/maxS).toFixed(0)}%"></div>${tag}</td></tr>`;
+  };
+  let h="";
+  const askRows=[]; let cum=0;
+  for(const l of asks){ cum+=l[1]; askRows.push(row("ask",l,cum)); }
+  for(let i=asks.length;i<DEPTH;i++) h+='<tr class="empty"><td colspan="4">&nbsp;</td></tr>';
+  h+=askRows.reverse().join("");
+  const bb=bids.length?bids[0][0]:null, ba=asks.length?asks[0][0]:null;
+  const mid=bb!=null&&ba!=null?(bb+ba)/2:null;
+  h+=`<tr class="midrow"><td colspan="4">${mid!=null?`mid <b style="color:var(--text)">${cents(mid)}</b> · spread ${((ba-bb)*100).toFixed(1)}¢`:"one-sided"}`
+    +`${fv!=null?` · FV <b style="color:var(--fv)">${cents(fv)}</b>${mid!=null?` <span class="${fv-mid>=0?"pos":"neg"}">(${sgnc(fv-mid)})</span>`:""}`:""}</td></tr>`;
+  cum=0;
+  for(const l of bids){ cum+=l[1]; h+=row("bid",l,cum); }
+  for(let i=bids.length;i<DEPTH;i++) h+='<tr class="empty"><td colspan="4">&nbsp;</td></tr>';
+  tb.innerHTML=h;
+  prevBook[key]=now;
+}
+function fmtSize(s){ return s>=10000?(s/1000).toFixed(1)+"k":s>=100?s.toFixed(0):s.toFixed(1); }
+function bookHead(book){
+  if(!book||!book.r) return "";
+  const l=book.last;
+  const age=book.age!=null?` · updated ${book.age<1000?book.age+"ms":(book.age/1000).toFixed(1)+"s"} ago`:"";
+  const lt=l?` · last ${cents(l.p)} ×${fmtSize(l.s)} <span class="${l.side==="BUY"?"pos":"neg"}">${l.side}</span> ${((Date.now()-l.ts)/1000).toFixed(1)}s ago`:"";
+  return lt+age;
+}
+function renderBook(f){
+  const b=f.book||{}, fv=f.live?f.live.fv:null, q=f.quote||{};
+  $("ob-slug").textContent=f.w.slug;
+  const F=f.feeds&&f.feeds.pm;
+  $("ob-stats").textContent=F?`${Math.round(F.rate)} updates/s · exchange→server ${F.lagP50!=null?F.lagP50+" ms":"—"} · pushed every ${f.feeds.pushMs} ms`:"";
+  // our side of each book: paper orders when trading, else the target quote. Down is the mirror:
+  // FV_down = 1 − FV, and our Up bid at p is a Down ask at 1 − p.
+  const mir=x=>Math.round((1-x)*1e4)/1e4, T=f.trade, mineUp=[], mineDn=[];
+  const put=(side,price,size,live,queue)=>{ mineUp.push({side,price,size,live,queue}); mineDn.push({side:side==="bid"?"ask":"bid",price:mir(price),size,live,queue}); };
+  if(T&&TRADING(T.mode)){ for(const o of T.orders||[]) if(isWorking(o)) put(o.side==="BUY"?"bid":"ask",o.price,o.size-o.filled,o.live,o.queue); }
+  else { if(q.bid!=null) put("bid",q.bid,q.bidSize||0,true,null); if(q.ask!=null) put("ask",q.ask,q.askSize||0,true,null); }
+  ladder("ob-up",b.up,fv,mineUp,"up");
+  ladder("ob-dn",b.down,fv!=null?1-fv:null,mineDn,"dn");
+  $("ob-up-head").innerHTML=bookHead(b.up);
+  $("ob-dn-head").innerHTML=bookHead(b.down);
+  const qq=[];
+  if(q.bid!=null) qq.push(`Up bid <b style="color:var(--green)">${q.bidSize??""} @ ${cents(q.bid)}</b>`);
+  if(q.ask!=null) qq.push(`Down bid <b style="color:var(--red)">${q.askSize??""} @ ${cents(1-q.ask)}</b>`);
+  const res=q.reservation!=null&&q.center!=null&&Math.abs(q.reservation-q.center)>1e-4?` → ${q.policy==="cert"?"E[V | sell] (Up terms)":"reservation"} ${cents(q.reservation)}`:"";
+  $("ob-quote").innerHTML=`<span style="color:var(--purple)">target</span>: ${qq.length?qq.join(" / "):"<span class='muted'>none</span>"}`
+    +` <span class="muted">· ${esc(q.why||"")}${q.center!=null?` · centre ${cents(q.center)}${res}`:""}</span>`;
+}
+
+// ---- recent windows ---------------------------------------------------------------------------------
+const SIDE={windows:[],date:"",dates:[]};
+async function loadWindows(){
+  try{
+    const r=await (await fetch("api/windows"+(SIDE.date?`?date=${SIDE.date}`:""))).json();
+    SIDE.windows=r.windows||[]; SIDE.dates=r.dates||[]; SIDE.date=r.date||SIDE.date;
+    const inp=$("side-date"); inp.value=SIDE.date;
+    if(SIDE.dates.length){ inp.max=SIDE.dates[0]; inp.min=SIDE.dates[SIDE.dates.length-1]; }
+  }catch{ SIDE.windows=[]; }
+  renderSide();
+}
+function pickDate(v){ if(!v) return; SIDE.date=v; loadWindows(); }
+function stepDate(dir){
+  const i=SIDE.dates.indexOf(SIDE.date), j=i<0?0:i-dir;
+  if(j<0||j>=SIDE.dates.length) return;
+  SIDE.date=SIDE.dates[j]; loadWindows();
+}
+function renderSide(){
+  const box=$("side-list");
+  $("side-sub").textContent=SIDE.windows.length?`· ${SIDE.windows.length} kept`:"";
+  if(!SIDE.windows.length){ box.innerHTML=`<div class="muted">no windows on ${SIDE.date||"this day"} yet — the first one is written ~2 s after it closes</div>`; return; }
+  box.innerHTML=SIDE.windows.map(w=>{
+    const live=w.live;
+    const un=w.up===undefined||w.up===null;
+    const badge=live?'<span class="badge" style="background:#1a1c14;color:var(--amber)">live</span>'
+      :un?'<span class="badge" style="background:#141b27;color:var(--muted)">pending</span>'
+      :`<span class="badge" style="background:${w.up?'#0d2419':'#321414'};color:${w.up?'var(--green)':'var(--red)'}">${w.up?'UP ▲':'DOWN ▼'}</span>`;
+    const src=!un&&w.src==="gamma"?' <span class="muted" title="final: Polymarket payout">✓</span>':!un?' <span class="muted" title="provisional: Chainlink TWAP report, awaiting Polymarket payout">~</span>':"";
+    let sc="";
+    if(w.score){
+      const h=w.score.lead.fv1.hit, s=w.score.settle;
+      if(h!=null) sc+=` <span class="${h>=0.5?"pos":"neg"}" title="FV lead 1 s hit rate">${(h*100).toFixed(0)}%</span>`;
+      if(s.llFv!=null&&s.llMkt!=null){ const d=s.llFv-s.llMkt; sc+=` <span class="${d<=0?"pos":"neg"}" title="settlement log loss FV − market (negative = FV better)">ΔLL ${d>=0?"+":"−"}${Math.abs(d).toFixed(3)}</span>`; }
+    }
+    const pp=w.paper&&w.paper.fills?` <span class="${w.paper.pnl>=0?"pos":"neg"}" title="paper PnL · ${w.paper.fills} fill(s) · peak |net| ${shr(w.paper.maxAbs)}${w.paper.settled?"":" · not settled yet: marked"}">${usd(w.paper.pnl)}${w.paper.settled?"":"~"}</span>`:"";
+    const late=w.joinedLate?' <span class="muted" title="the bot joined after this window opened">⌁</span>':"";
+    const pol=w.policy?` <span class="muted" title="quoting setup this window ran${w.tag&&w.tag!==w.policy?": "+esc(w.tag):""}">${esc(w.policy)}</span>`:"";
+    const sel=(pinned&&pinned.meta.startTs===w.startTs)||(!pinned&&live);
+    const k=w.Kcl!=null?"$"+w.Kcl.toFixed(2):"—";
+    return `<div class="slrow${sel?" sel":""}" onclick="selectWindow(${w.startTs},${live?"true":"false"})" title="${w.slug||w.startTs}${w.KclSrc?" · strike "+w.KclSrc:""}">
+      <span class="t">${hhmm(w.startTs)}</span><span class="m">${badge}${src}${pp}${pol}${sc}${late}</span><span class="muted" title="price to beat">${k}</span></div>`;
+  }).join("");
+}
+
+// ---- pinned replay ---------------------------------------------------------------------------------
+async function selectWindow(startTs,isLive){
+  if(isLive){ unpinWindow(); return; }
+  let w;
+  try{ const r=await fetch("api/windows/"+startTs); if(!r.ok) throw 0; w=await r.json(); }
+  catch{ log('<span class="neg">no series recorded for that window</span>'); return; }
+  if(w.cols&&w.cols.length>Object.keys(C).length) setCols(w.cols);
+  pinned={meta:w.meta,rows:w.rows||[],score:w.score||null,paper:w.paper||null,paperSum:w.paperSum||null};
+  TRADE.fillsDirty=true;
+  const ps=w.paperSum, ptxt=ps&&ps.fills?` · paper <span class="${ps.pnl>=0?"pos":"neg"}">${usd(ps.pnl)}</span> on ${ps.fills} fill(s)${ps.settled?"":" (unsettled)"}`:"";
+  const un=w.meta.up===undefined||w.meta.up===null;
+  const res=un?'<span class="muted">unresolved</span>':`<span class="${w.meta.up?'pos':'neg'}">settled ${w.meta.up?'UP ▲':'DOWN ▼'}</span> <span class="muted">(${w.meta.src||"?"})</span>`;
+  $("pin-txt").innerHTML=`📌 replaying <b>${w.meta.slug}</b> · ${new Date(w.meta.startTs*1000).toLocaleString()} · ${res}${ptxt} <span class="muted">· ${pinned.rows.length} frames · charts and fills are the replay; the order book, inventory, orders and blotter stay live</span>`;
+  $("pinbar").style.display=""; $("feat-live").style.display=""; $("featgrid").style.opacity=".45";
+  renderPinnedHeads(); renderSide(); schedule();
+}
+function unpinWindow(){
+  pinned=null; TRADE.fillsDirty=true;
+  $("pinbar").style.display="none"; $("feat-live").style.display="none"; $("featgrid").style.opacity="";
+  renderSide(); schedule();
+}
+
+// ---- header tiles ----------------------------------------------------------------------------------
+function strikeTag(src){ return src==="chainlink"?"TWAP60":src==="basis"?"≈ est":""; }
+function renderLiveHeads(f){
+  const m=f.w, L=f.live||{}, row=f.row;
+  $("btc-slug").textContent=m.slug; $("pm-slug").textContent=m.slug;
+  const K=m.Kcl!=null?m.Kcl:L.Kdisp;
+  $("btc-target").innerHTML=K!=null?money(K)+` <span class="muted" style="font-size:11px">${strikeTag(m.KclSrc)||"≈ est"}</span>`:"—";
+  const cl=row[C.cl], tw=row[C.tw];
+  $("btc-price").textContent=cl!=null?money(cl):"—";
+  $("btc-twap").textContent=tw!=null?money(tw):"—";
+  const dl=$("btc-delta");
+  if(cl!=null&&K!=null){ const d=cl-K, up=d>=0; dl.innerHTML=`${up?"▲":"▼"} $${Math.abs(d).toFixed(2)}`; dl.className="big "+(up?"pos":"neg"); }
+  else { dl.textContent="—"; dl.className="big"; }
+  dl.title="Chainlink spot − price to beat. Settlement compares the TWAP-60s, so on a near-flat window the two can disagree.";
+  const left=Math.max(0,m.endTs-f.t/1000);
+  $("btc-clock-lbl").textContent="Time left"; $("btc-clock").className="big";
+  $("btc-clock").textContent=`${Math.floor(left/60)}:${(left%60).toFixed(1).padStart(4,"0")}`;
+  const mid=row[C.mid], fv=row[C.fv];
+  $("pm-yes").textContent=mid!=null?cents(mid):"—";
+  $("pm-no").textContent=mid!=null?cents(1-mid):"—";
+  $("pm-fv").textContent=fv!=null?cents(fv):"—";
+  const g=$("pm-gap");
+  if(fv!=null&&mid!=null){ g.textContent=sgnc(fv-mid); g.className="big "+(fv-mid>=0?"pos":"neg"); } else { g.textContent="—"; g.className="big"; }
+  const bb=row[C.bb], ba=row[C.ba];
+  $("pm-book").textContent=bb!=null&&ba!=null?`${cents(bb)} / ${cents(ba)}`:"—";
+  const pd=$("pm-delta");
+  if(mid!=null&&LIVE.openMid!=null){ const d=(mid-LIVE.openMid)*100, up=d>=0; pd.textContent=`${up?"▲":"▼"} ${Math.abs(d).toFixed(1)}¢`; pd.className="big "+(up?"pos":"neg"); }
+  else { pd.textContent="—"; pd.className="big"; }
+}
+function renderPinnedHeads(){
+  if(!pinned) return;
+  const m=pinned.meta, R=pinned.rows, last=R[R.length-1]||[];
+  $("btc-slug").textContent=m.slug; $("pm-slug").textContent=m.slug;
+  $("btc-target").innerHTML=m.Kcl!=null?money(m.Kcl)+` <span class="muted" style="font-size:11px">${strikeTag(m.KclSrc)}</span>`:"—";
+  $("btc-price").textContent=last[C.cl]!=null?money(last[C.cl]):"—";
+  $("btc-twap").textContent=last[C.tw]!=null?money(last[C.tw]):"—";
+  const dl=$("btc-delta");
+  if(m.closeTwap!=null&&m.Kcl!=null){ const d=m.closeTwap-m.Kcl, up=d>=0; dl.innerHTML=`${up?"▲":"▼"} $${Math.abs(d).toFixed(2)}`; dl.className="big "+(up?"pos":"neg"); dl.title="settlement TWAP − price to beat"; }
+  else { dl.textContent="—"; dl.className="big"; }
+  const un=m.up===undefined||m.up===null;
+  $("btc-clock-lbl").textContent=un?"Outcome":"Settled";
+  $("btc-clock").textContent=un?"unresolved":(m.up?"UP ▲":"DOWN ▼");
+  $("btc-clock").className="big "+(un?"muted":(m.up?"pos":"neg"));
+  let lm=null,lf=null,om=null;
+  for(const r of R){ if(r[C.mid]!=null){ if(om==null) om=r[C.mid]; lm=r[C.mid]; } if(r[C.fv]!=null) lf=r[C.fv]; }
+  $("pm-yes").textContent=lm!=null?cents(lm):"—"; $("pm-no").textContent=lm!=null?cents(1-lm):"—";
+  $("pm-fv").textContent=lf!=null?cents(lf):"—"; $("pm-gap").textContent="—"; $("pm-gap").className="big"; $("pm-book").textContent="—";
+  const pd=$("pm-delta");
+  if(lm!=null&&om!=null){ const d=(lm-om)*100; pd.textContent=`${d>=0?"▲":"▼"} ${Math.abs(d).toFixed(1)}¢`; pd.className="big "+(d>=0?"pos":"neg"); }
+}
+
+// ---- model inputs ----------------------------------------------------------------------------------
+function renderModel(f){
+  const L=f.live||{};
+  const bps=x=>x==null?"—":(x>=0?"+":"−")+Math.abs(x).toFixed(2)+" bps";
+  const sb=x=>x==null?"—":(x*1e4).toFixed(3);
+  $("f-sigbase").textContent=L.sigmaBase!=null?sb(L.sigmaBase)+" bps":"warming up";
+  $("f-sigparts").textContent=`${sb(L.sigmaFast)} / ${sb(L.sigmaSlow)} bps`;
+  $("f-kappa").textContent=L.kappa!=null?`${L.kappa.toFixed(3)} (${L.kappaN} win · ${L.ratiosN} now)`:"—";
+  $("f-sigma").textContent=L.sigma!=null?sb(L.sigma)+" bps":"—";
+  $("f-eps").textContent=L.epsBps!=null?`${L.epsBps.toFixed(3)} bps (${L.epsSrc}${L.epsN?" n="+L.epsN:""})`:"—";
+  $("f-lag").textContent=L.lagMs!=null?`${L.lagMs} ms ${L.lagAuto?"(auto)":"(fixed)"}`:"—";
+  const src=$("f-src");
+  src.textContent=L.fvSrc?`${L.fvSrc}${L.clAgeMs!=null?" · "+(L.clAgeMs/1000).toFixed(1)+" s":""}`:"—";
+  src.className=L.fvSrc==="venue"?"neg":"";
+  $("f-basis").textContent=bps(L.basisBps);
+  $("f-now").textContent=L.nowcast!=null?money(L.nowcast):"—";
+  const N=L.nc, mix=$("f-mix");
+  if(!N||!N.on){ mix.textContent="Binance only (CB_FEED=off)"; mix.className=""; }
+  else{
+    const how=`${Math.round((1-N.w)*100)}% BIN · ${Math.round(N.w*100)}% CB · ${N.lagB}/${N.lagC} ms`;
+    mix.title=`weight ${N.wAuto?"calibrated live":"pinned (NOWCAST_CB_WEIGHT)"}, Coinbase lag ${N.lagAuto?"calibrated live":"pinned (CB_LAG_MS)"} · ${N.fits} fit${N.fits===1?"":"s"} so far (priors until the first)`;
+    mix.textContent=N.src==="blend"?how:N.src==="binance"?`Binance only — ${N.w>0?"Coinbase stale":"weight 0"}`:N.src==="coinbase"?`Coinbase only — Binance stale`:"—";
+    mix.className=N.src==="blend"||(N.src==="binance"&&N.w===0)?"":"neg";
+  }
+  const bd=L.fv!=null&&L.fvb!=null?(L.fv-L.fvb)*100:null;
+  $("f-blend").textContent=bd==null?"—":`${bd>=0?"+":"−"}${Math.abs(bd).toFixed(2)}¢`;
+  $("f-m").textContent=bps(L.mBps);
+  $("f-tau").textContent=L.tau!=null?`${L.tau.toFixed(1)} s / ${L.tauEff.toFixed(1)} s`:"—";
+  $("f-sd").textContent=L.sdBps!=null?L.sdBps.toFixed(2)+" bps":"—";
+  $("f-branch").textContent=L.branch?`${L.branch} · ${(L.realized*100).toFixed(0)}%`:"—";
+  $("f-z").textContent=L.z!=null?`${L.z.toFixed(3)} → ${cents(L.fv)}`:"—";
+}
+
+// ---- scorecard -------------------------------------------------------------------------------------
+function renderScore(){
+  const S=pinned&&pinned.score?{one:pinned.score}:SCORE;
+  const t=$("score");
+  if(!S){ t.innerHTML='<tr><td class="muted">waiting for data…</td></tr>'; return; }
+  const cols=pinned?[["one","this window (replay)"]]:[["live","this window (live)"],["today",`today UTC${S.today&&S.today.windows!=null?" · "+S.today.windows+" win":""}`],["all",`all recorded${S.all&&S.all.windows!=null?" · "+S.all.windows+" win":""}`]];
+  $("sc-sub").textContent=pinned?`· replay of ${pinned.meta.slug}`:"· live window updates twice a second; closed windows are added ~2 s after the close";
+  const g=(k,fn)=>cols.map(([c])=>{ const v=S[c]; try{ return v?fn(v):"—"; }catch{ return "—"; } });
+  const hit=x=>x.hit==null?"—":`<span class="${x.hit>=0.5?"pos":"neg"}">${(x.hit*100).toFixed(1)}%</span> <span class="muted">n=${x.hitN}</span>`;
+  const bc=x=>`${x.beta==null?"—":x.beta.toFixed(2)} <span class="muted">/ ${x.corr==null?"—":x.corr.toFixed(3)}</span>`;
+  // two numbers, the lower one marked best (lower is better for every metric it is used on)
+  const pair2=(o,a,b,dig,u)=>{
+    if(!o||o[a]==null||o[b]==null) return '<span class="muted">—</span>';
+    const x=o[a], y=o[b];
+    return `<span class="${x<y?"best":""}">${x.toFixed(dig)}${u}</span> <span class="muted">/</span> <span class="${y<x?"best":""}">${y.toFixed(dig)}${u}</span> <span class="muted">n=${o.n}</span>`;
+  };
+  const tri=(v,a,b,c,dig)=>{
+    const s=v.settle; if(!s||!s.n) return '<span class="muted">after the close</span>';
+    const xs=[s[a],s[b],s[c]], mn=Math.min(...xs);
+    return xs.map((x,i)=>`<span class="${x===mn?"best":""}">${x.toFixed(dig)}</span>`).join(' <span class="muted">/</span> ')+` <span class="muted">n=${s.n}</span>`;
+  };
+  const rows=[
+    ["sec","FV lead — does the mid move toward FV?"],
+    ["FV · 1 s · hit",g(0,v=>hit(v.lead.fv1))],
+    ["FV · 1 s · β / corr",g(0,v=>bc(v.lead.fv1))],
+    ["FV · 5 s · hit",g(0,v=>hit(v.lead.fv5))],
+    ["FV · 5 s · β / corr",g(0,v=>bc(v.lead.fv5))],
+    ["anchored · 1 s · hit",g(0,v=>hit(v.lead.fva1))],
+    ["anchored · 5 s · hit",g(0,v=>hit(v.lead.fva5))],
+    ["sec","tracking"],
+    ["mean |FV − mid| · |anchored − mid|",g(0,v=>v.maeFv==null?"—":`${v.maeFv.toFixed(2)}¢ <span class="muted">/ ${v.maeFva.toFixed(2)}¢</span>`)],
+    ["sec","settlement — FV / anchored / market (lower is better)"],
+    ["Brier",g(0,v=>tri(v,"brierFv","brierFva","brierMkt",4))],
+    ["log loss",g(0,v=>tri(v,"llFv","llFva","llMkt",4))],
+    ["sec","nowcast — blended (Binance+Coinbase) / Binance-only FV"],
+    ["1 s · hit",g(0,v=>v.lead.fvb1?`${hit(v.lead.fv1)} <span class="muted">/</span> ${hit(v.lead.fvb1)}`:"—")],
+    ["5 s · hit",g(0,v=>v.lead.fvb5?`${hit(v.lead.fv5)} <span class="muted">/</span> ${hit(v.lead.fvb5)}`:"—")],
+    ["mean |FV − mid|",g(0,v=>pair2(v.maePair&&v.maePair.n?v.maePair:null,"fv","fvb",2,"¢"))],
+    ["Brier (same seconds)",g(0,v=>pair2(v.pair&&v.pair.n?v.pair:null,"brierFv","brierFvb",4,""))],
+    ["log loss (same seconds)",g(0,v=>pair2(v.pair&&v.pair.n?v.pair:null,"llFv","llFvb",4,""))],
+  ];
+  let h=`<tr><th>metric</th>${cols.map(([,n])=>`<th>${n}</th>`).join("")}</tr>`;
+  for(const r of rows){
+    if(r[0]==="sec"){ h+=`<tr class="sec"><td colspan="${cols.length+1}">${r[1]}</td></tr>`; continue; }
+    h+=`<tr><td>${r[0]}</td>${r[1].map(x=>`<td>${x}</td>`).join("")}</tr>`;
+  }
+  t.innerHTML=h;
+}
+
+// ---- charts ----------------------------------------------------------------------------------------
+// Ported from pmqb drawBtc/drawPm. Rows arrive at 10 Hz, so a full window is ~3,000 points per line:
+// each line is decimated to first/min/max/last per pixel column, which keeps every sub-second spike at
+// any zoom while drawing at most ~4 points per pixel.
+function fitSvg(svg){
+  const W=Math.max(320,Math.round(svg.clientWidth||600)), H=Math.max(120,Math.round(svg.clientHeight||210));
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  return {W,H};
+}
+const CHART={btc:null,pm:null};
+const PMZ={from:0,to:WIN_SEC};
+const pmSpan=()=>PMZ.to-PMZ.from;
+function segs(rows,val,xOf,yOf){
+  const out=[]; let seg=null, col=null, buf=[];
+  const flush=()=>{
+    if(!buf.length||!seg) { buf=[]; return; }
+    if(buf.length<=4){ for(const p of buf) seg.push(p); }
+    else{
+      let mn=buf[0],mx=buf[0];
+      for(const p of buf){ if(p[2]<mn[2]) mn=p; if(p[2]>mx[2]) mx=p; }
+      const pick=[buf[0],mn,mx,buf[buf.length-1]].sort((a,b)=>a[0]-b[0]);
+      let prev=null; for(const p of pick){ if(p!==prev) seg.push(p); prev=p; }
+    }
+    buf=[];
+  };
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i], e=r[0];
+    if(e<PMZ.from-1||e>PMZ.to+1) continue;
+    const v=val(r);
+    if(v==null||!Number.isFinite(v)){ flush(); seg=null; continue; }
+    const x=xOf(e), px=Math.round(x);
+    if(!seg){ seg=[]; out.push(seg); col=px; }
+    else if(px!==col){ flush(); col=px; }
+    buf.push([i,x,v]);
+  }
+  flush();
+  return out.map(s=>s.map(p=>[p[1],yOf(p[2])]));
+}
+const toD=ss=>ss.map(s=>s.map((p,k)=>(k?"L":"M")+p[0].toFixed(1)+","+p[1].toFixed(1)).join("")).join("");
+function timeGrid(xOf,H,PADT,PADB,W,PADR){
+  let g="";
+  const span=pmSpan(), step=span>240?60:span>120?30:span>60?15:span>25?5:span>10?2:1;
+  for(let sec=Math.ceil(PMZ.from/step)*step; sec<=PMZ.to; sec+=step){
+    if(sec<=PMZ.from+1e-6) continue;
+    const x=xOf(sec);
+    g+=`<line x1="${x.toFixed(1)}" y1="${PADT}" x2="${x.toFixed(1)}" y2="${H-PADB}" stroke="var(--line)" stroke-width="1" opacity=".35"/>`
+     +`<text class="btcmuted" x="${(x+3).toFixed(1)}" y="${H-4}">${step>=60?(sec/60)+"m":sec+"s"}</text>`;
+  }
+  return g;
+}
+function lastWith(rows,ci){ for(let i=rows.length-1;i>=0;i--) if(rows[i][ci]!=null) return rows[i]; return null; }
+
+function drawBtc(){
+  const svg=$("btcsvg"); const {W,H}=fitSvg(svg);
+  const PADR=70,PADT=10,PADB=16;
+  const R=pinned?pinned.rows:LIVE.rows;
+  const meta=pinned?pinned.meta:LIVE.meta;
+  const TGT=meta?(meta.Kcl!=null?meta.Kcl:(lastFrame&&!pinned?lastFrame.live.Kdisp:null)):null;
+  $("btc-targetline").setAttribute("x2",W);
+  const ids=["btc-line","btc-twapline","btc-binline","btc-area"];
+  if(!R.length){ ids.forEach(i=>$(i).setAttribute("d","")); $("btc-nowline").style.display="none"; $("btc-dot").style.display="none"; $("btc-grid").innerHTML=""; CHART.btc=null; return; }
+  let lo=Infinity,hi=-Infinity;
+  if(TGT!=null){ lo=hi=TGT; }
+  for(const r of R){
+    if(r[0]<PMZ.from-1||r[0]>PMZ.to+1) continue;
+    for(const ci of [C.cl,C.tw,C.bin]){ const v=r[ci]; if(v!=null){ if(v<lo)lo=v; if(v>hi)hi=v; } }
+  }
+  if(!Number.isFinite(lo)){ ids.forEach(i=>$(i).setAttribute("d","")); CHART.btc=null; return; }
+  const pad=Math.max((hi-lo)*0.15,(TGT||lo)*1e-5); lo-=pad; hi+=pad;   // 1e-5: ~$1 on BTC, ~2¢ on ETH
+  const dp=hi-lo>=30?0:hi-lo>=3?1:2;
+  const xOf=e=>((e-PMZ.from)/pmSpan())*(W-PADR);
+  const yOf=p=>PADT+(1-(p-lo)/(hi-lo))*(H-PADT-PADB);
+  const cr=$("btccliprect"); cr.setAttribute("y",PADT); cr.setAttribute("width",Math.max(0,W-PADR)); cr.setAttribute("height",Math.max(0,H-PADT-PADB));
+  CHART.btc={rows:R,xOf,yOf,H,PADT,PADB,winStart:meta?meta.startTs:null,target:TGT};
+  const clS=segs(R,r=>r[C.cl],xOf,yOf);
+  $("btc-line").setAttribute("d",toD(clS));
+  $("btc-twapline").setAttribute("d",toD(segs(R,r=>r[C.tw],xOf,yOf)));
+  $("btc-binline").setAttribute("d",toD(segs(R,r=>r[C.bin],xOf,yOf)));
+  if(TGT!=null&&clS.length){
+    const yT=yOf(TGT), pts=clS.flat();
+    $("btc-area").setAttribute("d",`M${pts[0][0].toFixed(1)},${yT.toFixed(1)}`+pts.map(p=>`L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("")+`L${pts[pts.length-1][0].toFixed(1)},${yT.toFixed(1)}Z`);
+    $("btc-targetline").setAttribute("y1",yT); $("btc-targetline").setAttribute("y2",yT); $("btc-targetline").style.display="";
+  } else { $("btc-area").setAttribute("d",""); $("btc-targetline").style.display="none"; }
+  const lr=lastWith(R,C.cl);
+  if(lr){
+    const yN=yOf(lr[C.cl]), nl=$("btc-nowline");
+    nl.setAttribute("x1",0); nl.setAttribute("x2",W); nl.setAttribute("y1",yN); nl.setAttribute("y2",yN); nl.style.display="";
+    const d=$("btc-dot"); d.setAttribute("cx",xOf(lr[0])); d.setAttribute("cy",yN); d.style.display="";
+  }
+  let g="";
+  for(let k=0;k<=3;k++){
+    const p=lo+(hi-lo)*k/3, y=yOf(p);
+    g+=`<line x1="0" y1="${y.toFixed(1)}" x2="${W-PADR}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"/>`
+     +`<text class="btcmuted" x="${W-PADR+6}" y="${(y+3).toFixed(1)}">$${p.toFixed(dp)}</text>`;
+  }
+  $("btc-grid").innerHTML=g+timeGrid(xOf,H,PADT,PADB,W,PADR);
+}
+
+const pmOn=Object.assign({fv:true,fva:false,edge:false,q:false,w:true,fills:true,orders:true},(()=>{ try{ return JSON.parse(localStorage.getItem("mm.pmseries")||"{}"); }catch{ return {}; } })());
+// The window's orders: when each was sent and at what price (Up terms, as the fills), its first fill and how it ended
+// (live: the event stream; a pinned replay: its archived events).
+function pmOrders(ws){
+  const evs=pinned?((pinned.paper&&pinned.paper.events)||[]).map(a=>({t:a[0],type:a[1],oid:a[2],side:a[3],price:a[4],size:a[5],note:a[6],token:a[7],tokenPrice:a[8],win:ws})):TRADE.ev;
+  const FL=pinned?((pinned.paper&&pinned.paper.fills)||[]):TRADE.fills, m=new Map();
+  for(const e of evs){
+    if(e.win!==ws||e.oid==null) continue;
+    if(e.type==="place") m.set(e.oid,{...e,cxl:null,end:null,fill:null});
+    else { const o=m.get(e.oid); if(!o) continue;
+      if(e.type==="cancel"){ if(!o.cxl) o.cxl=e; }                                   // our cancel request, and why
+      else if((e.type==="cancelled"||e.type==="reject")&&!o.end) o.end=e; }           // how it ended
+  }
+  for(const f of FL){ const o=m.get(f.oid); if(o&&!o.fill) o.fill=f; }
+  return [...m.values()];
+}
+const ordWord=o=>o.fill?`filled +${Math.round(o.fill.t-o.t)} ms`:o.end?(o.end.type==="reject"?"refused":"cancelled")+` +${Math.round(o.end.t-o.t)} ms`:"working";
+// Why an order ended short of a full fill: our cancel's reason (if we asked), then the end's note, trimmed of the
+// leg tag the line above shows and the venue's boilerplate. Archives from before 10-15 call the venue's confirmation
+// of our own cancel "cancelled by the venue": it is worded as the exchange words it now.
+const ordWhy=o=>{
+  if(!o.end) return "";
+  const trim=s=>String(s||"").replace(/^pair #\d+ leg \d:?\s*/,"").replace(/\s*\(https?:[^)]*\)/g,"").replace(/RequestRejectedError:\s*/g,"")
+    .replace(/no orders found to match with FAK order\..*?no match is found\./,"nothing to take within the limit (fill-and-kill)");
+  const end=trim(o.end.note);
+  return o.cxl?`our cancel: ${trim(o.cxl.note)} → ${end.replace(/^cancelled by the venue · /,"cancel confirmed by the venue · ")}`:end;
+};
+function togglePmSeries(k,on){ pmOn[k]=on; try{ localStorage.setItem("mm.pmseries",JSON.stringify(pmOn)); }catch{} schedule(); }
+const PM_TICKS=[0,0.25,0.5,0.75,0.99];
+function drawPm(){
+  const svg=$("pmsvg"); const {W,H}=fitSvg(svg);
+  const PADR=70,PADT=10,PADB=16;
+  const xOf=e=>((e-PMZ.from)/pmSpan())*(W-PADR);
+  const yOf=p=>PADT+(1-p)*(H-PADT-PADB);
+  const cr=$("pmcliprect"); cr.setAttribute("y",PADT); cr.setAttribute("width",Math.max(0,W-PADR)); cr.setAttribute("height",Math.max(0,H-PADT-PADB));
+  let g="";
+  for(const p of PM_TICKS){
+    const y=yOf(p);
+    g+=`<line x1="0" y1="${y.toFixed(1)}" x2="${W-PADR}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity="${p===0.5?0:.5}"/>`
+     +`<text class="btcmuted" x="${W-PADR+6}" y="${(y+3).toFixed(1)}">${(p*100).toFixed(0)}¢</text>`;
+  }
+  $("pm-grid").innerHTML=g+timeGrid(xOf,H,PADT,PADB,W,PADR);
+  const y50=yOf(0.5); $("pm-midline").setAttribute("x2",W); $("pm-midline").setAttribute("y1",y50); $("pm-midline").setAttribute("y2",y50);
+  const R=pinned?pinned.rows:LIVE.rows;
+  const meta=pinned?pinned.meta:LIVE.meta;
+  CHART.pm=R.length?{rows:R,xOf,yOf,H,PADT,PADB,winStart:meta?meta.startTs:null}:null;
+  $("pm-line").setAttribute("d",toD(segs(R,r=>r[C.mid],xOf,yOf)));
+  $("pm-line-no").setAttribute("d",toD(segs(R,r=>r[C.mid]==null?null:1-r[C.mid],xOf,yOf)));
+  const opt={
+    fv:["pm-line-fv",r=>r[C.fv]],
+    fva:["pm-line-fva",r=>r[C.fva]],
+    edge:["pm-line-edge",r=>r[C.fv]==null||r[C.mid]==null?null:Math.max(0,Math.min(1,0.5+r[C.fv]-r[C.mid]))],
+  };
+  for(const k in opt){ const el=$(opt[k][0]); if(pmOn[k]){ el.setAttribute("d",toD(segs(R,opt[k][1],xOf,yOf))); el.style.display=""; } else { el.style.display="none"; } }
+  for(const [id,ci] of [["pm-line-qb",C.qb],["pm-line-qa",C.qa]]){ const el=$(id); if(pmOn.q){ el.setAttribute("d",toD(segs(R,r=>r[ci],xOf,yOf))); el.style.display=""; } else el.style.display="none"; }
+  for(const [id,ci] of [["pm-line-wb",C.wb],["pm-line-wa",C.wa]]){ const el=$(id); if(pmOn.w&&ci!=null){ el.setAttribute("d",toD(segs(R,r=>r[ci],xOf,yOf))); el.style.display=""; } else el.style.display="none"; }
+  // orders sent: ○ where and when each went out, ┄ to its first fill, ✕ when nothing filled; the pair's leg above it
+  let og="";
+  if(pmOn.orders&&meta&&meta.startTs!=null){
+    const ws0=meta.startTs;
+    for(const o of pmOrders(ws0)){
+      const e=o.t/1000-ws0; if(o.price==null||e<PMZ.from-1||e>PMZ.to+1) continue;
+      const x=xOf(e), y=yOf(o.price), col=`var(--${o.token==="DOWN"?"red":"green"})`;
+      if(o.fill) og+=`<path d="M${x.toFixed(1)},${y.toFixed(1)}L${xOf(o.fill.t/1000-ws0).toFixed(1)},${yOf(o.fill.price).toFixed(1)}" stroke="${col}" stroke-width="1" stroke-dasharray="2 2" opacity=".8"/>`;
+      og+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#0d131c" stroke="${col}" stroke-width="1.6"/>`;
+      if(!o.fill&&o.end) og+=`<path d="M${(x-2.4).toFixed(1)},${(y-2.4).toFixed(1)}L${(x+2.4).toFixed(1)},${(y+2.4).toFixed(1)}M${(x+2.4).toFixed(1)},${(y-2.4).toFixed(1)}L${(x-2.4).toFixed(1)},${(y+2.4).toFixed(1)}" stroke="${col}" stroke-width="1.4"/>`;
+      const leg=/leg (\d)/.exec(o.note||"");
+      if(leg) og+=`<text x="${x.toFixed(1)}" y="${(y-7).toFixed(1)}" text-anchor="middle" font-size="9" fill="${col}">${leg[1]}</text>`;
+    }
+  }
+  $("pm-orders").innerHTML=og;
+  // fills: ▲ bought / ▼ sold at the fill price, area ∝ size
+  let fg="";
+  const FL=pinned?((pinned.paper&&pinned.paper.fills)||[]):TRADE.fills, ws=meta?meta.startTs:null;
+  if(pmOn.fills&&ws!=null){
+    const base=(TRADE.cfg&&TRADE.cfg.orderSize)||25;
+    for(const fl of FL){
+      const e=fl.t/1000-ws; if(e<PMZ.from-1||e>PMZ.to+1) continue;
+      const x=xOf(e), y=yOf(fl.price), r=Math.max(3.5,Math.min(9,5*Math.sqrt(fl.size/base))), up=fl.side==="BUY";
+      const tip=up?y-r:y+r, foot=up?y+r*0.8:y-r*0.8;
+      fg+=`<path d="M${x.toFixed(1)},${tip.toFixed(1)}L${(x+r).toFixed(1)},${foot.toFixed(1)}L${(x-r).toFixed(1)},${foot.toFixed(1)}Z" fill="var(--${up?"green":"red"})" stroke="#0d131c" stroke-width="1"/>`;
+    }
+  }
+  $("pm-fills").innerHTML=fg;
+  const lm=lastWith(R,C.mid), lf=lastWith(R,C.fv);
+  const dot=(id,r,v)=>{ const d=$(id); if(r&&v!=null){ d.setAttribute("cx",xOf(r[0])); d.setAttribute("cy",yOf(v)); d.style.display=""; } else d.style.display="none"; };
+  dot("pm-dot",lm,lm&&lm[C.mid]); dot("pm-dot-no",lm,lm&&1-lm[C.mid]); dot("pm-dot-fv",pmOn.fv?lf:null,lf&&lf[C.fv]);
+  // end labels: YES / NO / FV, nudged apart so they never print on top of each other
+  const labs=[];
+  if(lm){ labs.push({t:cents(lm[C.mid]),y:yOf(lm[C.mid]),col:"var(--green)",x:xOf(lm[0])}); labs.push({t:cents(1-lm[C.mid]),y:yOf(1-lm[C.mid]),col:"var(--red)",x:xOf(lm[0])}); }
+  if(lf&&pmOn.fv) labs.push({t:"FV "+cents(lf[C.fv]),y:yOf(lf[C.fv]),col:"var(--fv)",x:xOf(lf[0])});
+  labs.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<labs.length;i++) if(labs[i].y-labs[i-1].y<16) labs[i].y=labs[i-1].y+16;
+  let o="";
+  for(const l of labs){
+    const w=l.t.length*7.2+10, ahead=l.x+9+w<=W-PADR, bx=ahead?l.x+9:l.x-9-w;
+    const cy=Math.min(H-PADB-8,Math.max(PADT+8,l.y));
+    o+=`<rect x="${bx.toFixed(1)}" y="${(cy-7.5).toFixed(1)}" width="${w.toFixed(1)}" height="15" rx="3" fill="#0d131c" fill-opacity=".9" stroke="${l.col}" stroke-opacity=".45"/>`
+      +`<text x="${(bx+w/2).toFixed(1)}" y="${(cy+4).toFixed(1)}" fill="${l.col}" text-anchor="middle" font-size="12" font-family="ui-monospace,Menlo,monospace">${l.t}</text>`;
+  }
+  $("pm-endlab").innerHTML=o;
+  syncZoomChrome();
+}
+
+// ---- zoom / pan (shared by both charts) ------------------------------------------------------------
+function pmZoomReset(){ PMZ.from=0; PMZ.to=WIN_SEC; schedule(); }
+function syncZoomChrome(){
+  const z=pmSpan()<WIN_SEC-0.5;
+  $("pm-zoomreset").style.display=z?"":"none";
+  $("pm-zoomlbl").textContent=z?`${PMZ.from.toFixed(1)}–${PMZ.to.toFixed(1)}s of 300s`:"";
+}
+function installZoom(svgId){
+  const svg=$(svgId);
+  const plotW=()=>Math.max(1,Math.round(svg.clientWidth||600)-70);
+  svg.addEventListener("wheel",e=>{
+    e.preventDefault();
+    const px=e.clientX-svg.getBoundingClientRect().left;
+    const at=PMZ.from+Math.max(0,Math.min(1,px/plotW()))*pmSpan();
+    const span=Math.max(2,Math.min(WIN_SEC,pmSpan()*(e.deltaY>0?1.25:0.8)));
+    let from=at-(at-PMZ.from)*(span/pmSpan()); from=Math.max(0,Math.min(WIN_SEC-span,from));
+    PMZ.from=from; PMZ.to=from+span; schedule();
+  },{passive:false});
+  let drag=null;
+  svg.addEventListener("mousedown",e=>{ if(pmSpan()>=WIN_SEC-0.5) return; drag={x:e.clientX,from:PMZ.from,to:PMZ.to}; svg.style.cursor="grabbing"; });
+  addEventListener("mousemove",e=>{
+    if(!drag) return;
+    const span=drag.to-drag.from;
+    let from=drag.from-(e.clientX-drag.x)*span/plotW(); from=Math.max(0,Math.min(WIN_SEC-span,from));
+    PMZ.from=from; PMZ.to=from+span; schedule();
+  });
+  addEventListener("mouseup",()=>{ if(drag){ drag=null; svg.style.cursor=""; } });
+  svg.addEventListener("dblclick",pmZoomReset);
+}
+installZoom("pmsvg"); installZoom("btcsvg"); installZoom("invsvg");
+addEventListener("resize",schedule);
+// header stats only ever widen: a value turning "—" or shorter at a window change must not re-wrap the row and shift the page
+const keepWide=new ResizeObserver(es=>{ for(const e of es){ const el=e.target, w=el.getBoundingClientRect().width; if(w>(el._w||0)+0.5){ el._w=w; el.style.minWidth=w+"px"; } } });
+document.querySelectorAll(".btchead>div").forEach(el=>keepWide.observe(el));
+
+// ---- hover readout: snaps to the nearest REAL frame ------------------------------------------------
+function nearest(rows,el){
+  let lo=0,hi=rows.length-1;
+  while(lo<hi){ const m=(lo+hi)>>1; if(rows[m][0]<el) lo=m+1; else hi=m; }
+  if(lo>0&&Math.abs(rows[lo-1][0]-el)<Math.abs(rows[lo][0]-el)) lo--;
+  return lo;
+}
+function stamp(ws,el){ return ws?`${new Date((ws+el)*1000).toLocaleTimeString()}.${String(Math.floor((el%1)*10))} · ${el.toFixed(1)}s in`:`${el.toFixed(1)}s in`; }
+// side=true: the readout sits beside the crosshair (right of it, or left where it would run off the panel)
+// instead of centred over it, so the chart under the cursor stays visible
+function installHover(key,svgId,wrapId,tipId,hairId,paint,side=false){
+  const svg=$(svgId), wrap=$(wrapId), tip=$(tipId), hair=$(hairId);
+  if(side) tip.style.transform="none";
+  const hide=()=>{ tip.style.display="none"; hair.style.display="none"; svg.querySelectorAll(".xdot").forEach(d=>d.style.display="none"); };
+  svg.addEventListener("mousemove",e=>{
+    const g=CHART[key]; if(!g||!g.rows.length){ hide(); return; }
+    const x=e.clientX-svg.getBoundingClientRect().left;
+    const el=PMZ.from+(x/Math.max(1,(svg.clientWidth||600)-70))*pmSpan();
+    if(el<g.rows[0][0]-1||el>g.rows[g.rows.length-1][0]+1){ hide(); return; }
+    const r=g.rows[nearest(g.rows,el)], X=g.xOf(r[0]);
+    hair.setAttribute("x1",X); hair.setAttribute("x2",X); hair.setAttribute("y1",g.PADT); hair.setAttribute("y2",g.H-g.PADB); hair.style.display="";
+    tip.innerHTML=paint(r,g,X);
+    tip.style.display="block";
+    if(side){
+      const w=tip.offsetWidth, gap=14, W=wrap.clientWidth;
+      const left=X+gap+w<=W-2?X+gap:X-gap-w;
+      tip.style.left=Math.round(Math.max(2,left))+"px";
+    } else {
+      const half=tip.offsetWidth/2; tip.style.left=Math.round(Math.max(half+2,Math.min(wrap.clientWidth-half-2,X)))+"px";
+    }
+    tip.style.top="0px";
+  });
+  svg.addEventListener("mouseleave",hide);
+}
+installHover("btc","btcsvg","btcwrap","btc-tip","btc-xhair",(r,g)=>{
+  const d=$("btc-xdot"); if(r[C.cl]!=null){ d.setAttribute("cx",g.xOf(r[0])); d.setAttribute("cy",g.yOf(r[C.cl])); d.style.display=""; }
+  const f=x=>x.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const delta=g.target!=null&&r[C.cl]!=null?r[C.cl]-g.target:null;
+  return (r[C.cl]!=null?`<div class="p" style="color:var(--amber)">$${f(r[C.cl])}</div>`:"")
+    +(r[C.tw]!=null?`<div class="t" style="color:var(--cyan)">TWAP60 $${f(r[C.tw])}</div>`:"")
+    +(r[C.bin]!=null?`<div class="t" style="color:var(--purple)">nowcast $${f(r[C.bin])}</div>`:"")
+    +(delta==null?"":`<div class="t"><span class="${delta>=0?"pos":"neg"}">${delta>=0?"▲":"▼"} $${Math.abs(delta).toFixed(2)}</span> vs price to beat</div>`)
+    +`<div class="t">${stamp(g.winStart,r[0])}</div>`;
+});
+installHover("pm","pmsvg","pmwrap","pm-tip","pm-xhair",(r,g)=>{
+  const y=r[C.mid], fv=r[C.fv], fva=r[C.fva];
+  const dy=$("pm-xdot"), dn=$("pm-xdot-no"), df=$("pm-xdot-fv");
+  if(y!=null){ dy.setAttribute("cx",g.xOf(r[0])); dy.setAttribute("cy",g.yOf(y)); dy.style.display=""; dn.setAttribute("cx",g.xOf(r[0])); dn.setAttribute("cy",g.yOf(1-y)); dn.style.display=""; }
+  if(fv!=null&&pmOn.fv){ df.setAttribute("cx",g.xOf(r[0])); df.setAttribute("cy",g.yOf(fv)); df.style.display=""; }
+  let x="";
+  if(fv!=null) x+=`<div class="t" style="color:var(--fv)">FV ${cents(fv)}${y!=null?` · gap ${sgnc(fv-y)}`:""}</div>`;
+  if(fva!=null&&pmOn.fva) x+=`<div class="t" style="color:var(--amber)">anchored ${cents(fva)}</div>`;
+  if(r[C.bb]!=null&&r[C.ba]!=null) x+=`<div class="t">book ${cents(r[C.bb])} / ${cents(r[C.ba])}</div>`;
+  if(pmOn.q&&(r[C.qb]!=null||r[C.qa]!=null)) x+=`<div class="t" style="color:var(--purple)">target ${r[C.qb]!=null?cents(r[C.qb]):"—"} / ${r[C.qa]!=null?cents(r[C.qa]):"—"}</div>`;
+  if(pmOn.w&&C.wb!=null&&(r[C.wb]!=null||r[C.wa]!=null)) x+=`<div class="t" style="color:var(--purple)">paper ${r[C.wb]!=null?cents(r[C.wb]):"—"} / ${r[C.wa]!=null?cents(r[C.wa]):"—"}</div>`;
+  if(C.inv!=null&&r[C.inv]!=null&&r[C.inv]!==0) x+=`<div class="t">net ${sgnSh(r[C.inv])} sh</div>`;
+  const FL=pinned?((pinned.paper&&pinned.paper.fills)||[]):TRADE.fills;
+  if(pmOn.fills&&g.winStart!=null){
+    const tol=Math.max(0.3,pmSpan()/300*3);
+    for(const fl of FL){ const e=fl.t/1000-g.winStart; if(Math.abs(e-r[0])<=tol) { const tf=tokOf(fl); x+=`<div class="t" style="color:var(--${tf.tok==="Up"?"green":"red"})">${tf.side==="BUY"?"bought":"sold"} ${tf.tok} ${shr(fl.size)} @ ${cents(tf.px)} · ${fl.via}</div>`; } }
+  }
+  if(pmOn.orders&&g.winStart!=null){
+    const tol=Math.max(0.3,pmSpan()/300*3);
+    for(const o of pmOrders(g.winStart)){ const e=o.t/1000-g.winStart; if(Math.abs(e-r[0])<=tol){ const tk=tokOf(o), leg=/pair #\d+ leg \d/.exec(o.note||""); x+=`<div class="t" style="color:var(--${tk.tok==="Up"?"green":"red"})">sent #${o.oid} ${tk.tok} ${shr(o.size)} @ ${cents(tk.px)}${leg?" · "+leg[0]:""} · ${ordWord(o)}</div>`;
+      const why=ordWhy(o); if(why) x+=`<div class="t why">${esc(why)}</div>`; } }
+  }
+  return (y!=null?`<div class="p"><span style="color:var(--green)">${cents(y)}</span><span class="muted"> / </span><span style="color:var(--red)">${cents(1-y)}</span></div>`:'<div class="p muted">no book</div>')
+    +`<div class="t">YES / NO · ${stamp(g.winStart,r[0])}</div>`+x;
+},true);
+
+// ---- paper trading ---------------------------------------------------------------------------------
+function renderTrade(f){
+  const T=f.trade; if(!T) return;
+  renderDecision(f,T);
+  if(!TRADING(T.mode)){
+    if(!TRADE.shadowDone){
+      TRADE.shadowDone=true;
+      const msg='<div class="shadowbox">MM_MODE=shadow — the quote is computed and drawn, no orders are simulated, so there is no inventory.<br>Set MM_MODE=paper (the default) to trade the quote against the live book.</div>';
+      $("inv-body").innerHTML=msg; $("wo").innerHTML=`<tr><td>${msg}</td></tr>`; $("netpos").style.display="none";
+      $("rp-open").style.display=$("rst-open").style.display="none";
+    }
+    return;
+  }
+  renderInventory(T); renderOrders(T);
+}
+
+function posneg(el,x){ el.className="big "+(x==null?"":x>=0?"pos":"neg"); }
+function renderInventory(T){
+  const A=T.acct, P=T.pos, G=TRADE.agg, cfg=TRADE.cfg||{}, max=cfg.maxPosition||100;
+  if(TRADE.pos!==P){ TRADE.pos=P; if(!P) TRADE.aggDirty=true; }   // the aggregate table's "this window" column
+  $("rst-open").style.display=T.mode==="paper"?"":"none";   // a live account is the wallet: only its PnL resets
+  if(T.mode!=="paper"&&$("rst").style.display!=="none") rstToggle(false);
+  $("ws-open").style.display=T.mode==="live"?"":"none";
+  if(A){
+    $("k-eq").textContent=money(A.equity);
+    const kp=$("k-pnl"); kp.textContent=usd(A.pnl); posneg(kp,A.pnl);
+    $("i-cash").textContent=`${money(A.cash)} · ${money(A.reserved)} · ${money(A.free)}`;
+  }
+  if(G){ const kt=$("k-today"); kt.textContent=usd(G.today.pnl); posneg(kt,G.today.pnl); }
+  $("inv-sub").textContent=`${cfg.orderSize??"?"} sh a side · limit ±${max} · skew ${((cfg.skewAtMax||0)*100).toFixed(1)}¢ at the limit · reduce-only last ${cfg.reduceOnlyLeftSec??"?"}s`;
+  $("g-min").textContent="−"+max; $("g-max").textContent="+"+max;
+  const S=T.settling||[];
+  $("i-settling").innerHTML=`<div class="sub"><span>Closed windows awaiting the label</span>${S.length?"":'<span class="r muted">none</span>'}</div>`+S.map(w=>
+    `<div class="row"><span>${hhmm(w.win)} · ${w.up>0?shr(w.up)+" Up":w.down>0?shr(w.down)+" Down":"flat"}${w.mark!=null?" · marked "+cents(w.mark):""} · ${w.fills} fill(s)</span><span class="${w.pnl>=0?"pos":"neg"}">${usd(w.pnl)}</span></div>`).join("");
+  const kw=$("k-win");
+  if(!P){ kw.textContent="—"; kw.className="big"; return; }
+  kw.textContent=usd(P.pnl); posneg(kw,P.pnl);
+  const fr=Math.max(-1,Math.min(1,P.net/max)), bar=$("g-bar");
+  bar.style.left=(fr>=0?50:50+fr*50)+"%"; bar.style.width=Math.abs(fr*50)+"%";
+  bar.style.background=fr>=0?"var(--green)":"var(--red)"; bar.style.opacity=Math.abs(fr)>=1?"1":".75";
+  $("g-txt").innerHTML=`<b class="${P.net>0?"pos":P.net<0?"neg":""}">${sgnSh(P.net)}</b> sh · ${(Math.abs(fr)*100).toFixed(0)}% of the limit · peak ${shr(P.maxAbs)}`;
+  $("i-up").textContent=P.up>0?`${shr(P.up)} @ ${cents(P.avgUp)}`:"0";
+  $("i-dn").textContent=P.down>0?`${shr(P.down)} @ ${cents(P.avgDown)}`:"0";
+  $("i-mark").textContent=P.mark!=null?`${cents(P.mark)} · ${money(P.value)}`:"—";
+  $("i-scen").innerHTML=`<span class="${P.ifUp>=0?"pos":"neg"}">${usd(P.ifUp)}</span> / <span class="${P.ifDown>=0?"pos":"neg"}">${usd(P.ifDown)}</span>`;
+  const drift=P.pnl-P.edge;
+  $("i-edge").innerHTML=`<span class="${P.edge>=0?"pos":"neg"}">${usd(P.edge)}</span> · <span class="${drift>=0?"pos":"neg"}">${usd(drift)}</span>`;
+  $("i-fills").textContent=`${P.fills} · ${shr(P.bought)} / ${shr(P.sold)} sh`;
+  $("i-cxl").innerHTML=cxlTxt(P,true);
+  // the aggregate table's "this window" column follows the window's fills and orders (its PnL at most once a second)
+  const pk=`${P.win}:${P.fills}:${P.fillsCxl}:${P.fillsNoCxl}:${P.placed}:${P.cancelled}`;
+  if(pk!==TRADE.posKey||Date.now()-TRADE.posAggT>1000){ TRADE.posKey=pk; TRADE.posAggT=Date.now(); TRADE.aggDirty=true; }
+  $("i-pairs").innerHTML=P.pairs?`${shr(P.pairs)} · ${cents(P.pairCost/P.pairs)} · <span class="${P.pairs-P.pairCost>=0?"pos":"neg"}">${usd(P.pairs-P.pairCost)}</span>`:"none yet";
+  $("i-ord").textContent=`${P.placed} / ${P.cancelled} / ${P.rejected}`;
+}
+
+// maker fills with our cancel in flight / with no cancel sent, with each one's share of the maker fills
+// (win = one window: fills it had before the bot restart that started the counts are said so, not shown as a dash)
+function cxlTxt(a,win){
+  const c=a.fillsCxl||0, n=a.fillsNoCxl||0, m=c+n;
+  if(!m&&!win) return a.fills?'<span class="muted">—</span>':"0 / 0";
+  const pct=x=>`<span class="muted">${(100*x/m).toFixed(0)}%</span>`;
+  const main=m?`<span class="neg">${c}</span> ${pct(c)} / <span class="pos">${n}</span> ${pct(n)}`:"0 / 0";
+  const takes=(a.fills||0)-m, un=win&&takes>0&&!m?` <span class="muted" title="these fills came before the restart that started the counts (or are takes)">· ${takes} uncounted</span>`:"";
+  return main+un;
+}
+function renderAgg(){
+  const G=TRADE.agg, t=$("aggtbl");
+  if(!G||!TRADING(TRADE.mode)){ t.innerHTML=""; return; }
+  const per=(a,b)=>b?a/b:null, sg=(x)=>`<span class="${x>=0?"pos":"neg"}">${usd(x)}</span>`;
+  // one column per quoting setup the account's windows recorded (v1, v2, v2+queue …), the latest three
+  const tags=Object.keys(G.ab||{}).filter(k=>G.ab[k].windows).slice(-3);
+  const src={today:G.today,all:G.all}; tags.forEach(k=>src["s:"+k]=G.ab[k]);
+  t.classList.toggle("ab",tags.length>0);
+  // the current window first (its position block; the rows that only mean something over many windows show —), then today…
+  const P=TRADE.pos, cols=[["today",`today ${G.date||""}`],["all","this account"],...tags.map(k=>["s:"+k,k])];
+  if(P){ src.win=P; cols.unshift(["win",`this window ${hhmm(P.win)}`]); }
+  const many=a=>a!==P;   // false for the window column
+  const rows=[
+    ["windows traded · won / lost",a=>many(a)?`${a.traded} · <span class="pos">${a.won}</span> / <span class="neg">${a.lost}</span>`:"—"],
+    ["PnL (unsettled marked)",a=>sg(a.pnl)],
+    ["PnL per window",a=>a.windows?sg(a.pnl/a.windows):"—"],
+    ["held inventory: PnL − locked pairs − rebate",a=>sg(a.pnl-(a.pairs-a.pairCost)-(a.rebate||0))],
+    ["fills · volume",a=>`${a.fills} · ${shr(a.bought+a.sold)} sh`],
+    ["maker fills: cancel in flight / no cancel (counted since 11-10)",a=>cxlTxt(a,!many(a))],
+    ["pairs merged · avg cost · locked",a=>a.pairs?`${shr(a.pairs)} · ${cents(a.pairCost/a.pairs)} · <span class="${a.pairs-a.pairCost>=0?"pos":"neg"}">${usd(a.pairs-a.pairCost)}</span>`:"—"],
+    ["taker fees (v4 takes; earlier the time-stop)",a=>a.fees?`<span class="neg">${usd(-a.fees)}</span>`:"—"],
+    ["maker rebate (credited since 10-11: 20% of the taker fee on maker fills)",a=>a.rebate?`<span class="pos">${usd(a.rebate)}</span>`:"—"],
+    ["edge at fill ¢/sh",a=>pc(per(a.edge,a.edgeN),2)],
+    ["markout 1/5/30 s ¢/sh",a=>[0,1,2].map(k=>pc(per(a.mk[k],a.mkN[k]),2)).join(" / ")],
+    ["best / worst window",a=>!many(a)||a.best==null?"—":`${usd(a.best)} / ${usd(a.worst)}`],
+    ["orders · fills per order",a=>`${a.placed} · ${a.placed?(100*a.fills/a.placed).toFixed(1)+"%":"—"}`],
+  ];
+  t.innerHTML=`<tr><th class="l"></th>${cols.map(c=>`<th${c[0].startsWith("s:")?' class="s"':""} title="${esc(c[1])}">${esc(c[1])}</th>`).join("")}</tr>`
+    +rows.map(r=>`<tr><td>${r[0]}</td>${cols.map(c=>`<td>${r[1](src[c[0]])}</td>`).join("")}</tr>`).join("");
+}
+
+function renderDecision(f,T){
+  const q=f.quote; if(!q) return;
+  $("qd-target").innerHTML=q.bid==null&&q.ask==null
+    ?`<span class="muted">no quote</span> <span class="muted" style="font-size:12px;font-weight:400">· ${esc(q.why)}</span>`
+    :`${q.bid!=null?`<span class="pos">Up bid ${q.bidSize} @ ${cents(q.bid)}</span>`:'<span class="muted">no Up bid</span>'} <span class="muted">·</span> ${q.ask!=null?`<span class="neg">Down bid ${q.askSize} @ ${cents(1-q.ask)}</span> <span class="muted" style="font-size:12px;font-weight:400">(the Up ask at ${cents(q.ask)})</span>`:'<span class="muted">no Down bid</span>'}`;
+  $("qd-steps").innerHTML=(q.steps||[]).map(s=>`<li class="s-${s.s}"><span class="k">${esc(s.k)}</span><span class="v">${esc(s.v)}</span></li>`).join("");
+  const A=T.actions||[];
+  $("qd-acts").innerHTML=!TRADING(T.mode)?'<span class="muted">shadow mode: the target is drawn, nothing is sent</span>'
+    :A.length?A.map(a=>`<div class="actrow"><span class="muted">${a.side==="up"?"Up":a.side==="down"?"Down":a.side}</span><span class="act ${a.act}">${a.act.toUpperCase()}</span><span>${esc(a.note)}</span></div>`).join("")
+    :'<span class="muted">—</span>';
+  const L=f.live||{};
+  $("qd-sub").textContent=`${L.fvSrc||"—"} pricer · ${((Date.now()-f.t)/1000).toFixed(1)} s ago`;
+  drawQmap(f,T);
+}
+
+// The quote on a price line: book, FV, centre, the skew to the reservation, the target and our orders.
+function drawQmap(f,T){
+  const svg=$("qmap"), W=Math.max(240,Math.round(svg.clientWidth||600)), H=70;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const q=f.quote||{}, L=f.live||{}, bb=f.row[C.bb], ba=f.row[C.ba];
+  const mine=(T.orders||[]).filter(isWorking);
+  const xs=[q.center,q.reservation,q.bid,q.ask,bb,ba,L.fv,...mine.map(o=>o.price)].filter(x=>x!=null&&Number.isFinite(x));
+  if(!xs.length){ svg.innerHTML=`<text class="btcmuted" x="8" y="38">no fair value yet</text>`; return; }
+  let lo=Math.min(...xs), hi=Math.max(...xs);
+  const mid=(lo+hi)/2, half=Math.max(0.03,(hi-lo)/2+0.012); lo=mid-half; hi=mid+half;
+  if(lo<0){ hi-=lo; lo=0; } if(hi>1){ lo=Math.max(0,lo-(hi-1)); hi=1; }
+  const PAD=12, Y=38, xOf=p=>PAD+(p-lo)/(hi-lo)*(W-2*PAD);
+  let g=`<line x1="${PAD}" x2="${W-PAD}" y1="${Y}" y2="${Y}" stroke="var(--line)"/>`;
+  const step=hi-lo>0.24?0.05:hi-lo>0.12?0.02:0.01;
+  for(let k=Math.ceil(lo/step-1e-9);k*step<=hi+1e-9;k++){
+    const p=k*step, x=xOf(p).toFixed(1);
+    g+=`<line x1="${x}" x2="${x}" y1="${Y-3}" y2="${Y+3}" stroke="var(--muted)" opacity=".5"/><text class="btcmuted" x="${x}" y="${H-2}" text-anchor="middle" style="font-size:10px">${Math.round(p*100)}</text>`;
+  }
+  if(bb!=null&&ba!=null) g+=`<rect x="${xOf(bb).toFixed(1)}" y="${Y-10}" width="${Math.max(1,xOf(ba)-xOf(bb)).toFixed(1)}" height="20" fill="var(--muted)" opacity=".09"/>`;
+  if(bb!=null) g+=`<rect x="${(xOf(bb)-1.5).toFixed(1)}" y="${Y-12}" width="3" height="24" fill="var(--green)"/>`;
+  if(ba!=null) g+=`<rect x="${(xOf(ba)-1.5).toFixed(1)}" y="${Y-12}" width="3" height="24" fill="var(--red)"/>`;
+  if(q.reservation!=null){
+    const xr=xOf(q.reservation);
+    g+=`<line x1="${xr.toFixed(1)}" x2="${xr.toFixed(1)}" y1="${Y-22}" y2="${Y+14}" stroke="var(--purple)" stroke-dasharray="2 2"/>`;
+    if(q.center!=null&&Math.abs(q.reservation-q.center)>1e-4){
+      const xc=xOf(q.center);
+      g+=`<path d="M${xc.toFixed(1)},${Y-19}L${xr.toFixed(1)},${Y-19}" stroke="var(--purple)" stroke-width="1.3" marker-end="url(#qarr)"/>`
+       +`<text x="${((xc+xr)/2).toFixed(1)}" y="${Y-23}" text-anchor="middle" fill="var(--purple)" style="font-size:10px">${q.policy==="cert"?"E[V | sell]":"skew"} ${sgnc(-(q.center-q.reservation))}</text>`;
+    }
+  }
+  const br=(p,dir)=>{ const x=xOf(p); return `<path d="M${(x+dir*5).toFixed(1)},${Y-10}L${x.toFixed(1)},${Y-10}L${x.toFixed(1)},${Y+10}L${(x+dir*5).toFixed(1)},${Y+10}" fill="none" stroke="var(--purple)" stroke-width="2"/>`; };
+  if(q.bid!=null) g+=br(q.bid,1);
+  if(q.ask!=null) g+=br(q.ask,-1);
+  const dia=(p,col)=>{ const x=xOf(p); return `<path d="M${x.toFixed(1)},${Y-6}L${(x+5).toFixed(1)},${Y}L${x.toFixed(1)},${Y+6}L${(x-5).toFixed(1)},${Y}Z" fill="${col}" stroke="#0d131c"/>`; };
+  if(L.fv!=null) g+=dia(L.fv,"var(--fv)");
+  if(q.center!=null) g+=dia(q.center,"var(--amber)");
+  for(const o of mine){ const x=xOf(o.price); g+=`<circle cx="${x.toFixed(1)}" cy="${Y+18}" r="4" fill="${o.live?"var(--purple)":"none"}" stroke="var(--purple)" stroke-width="1.5"/>`; }
+  svg.innerHTML=`<defs><marker id="qarr" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L6,3L0,6Z" fill="var(--purple)"/></marker></defs>`+g;
+}
+
+function renderOrders(T){
+  const O=T.orders||[], t=$("wo"), cfg=TRADE.cfg||{};
+  $("wo-sub").textContent=`${O.filter(isWorking).length} working · ${cfg.latencyMs??"?"} ms each way · a safer target waits ${cfg.requoteMinMs??"?"} ms`;
+  if(!O.length){ t.innerHTML='<tr><td class="l muted">no orders — the quote decision says why</td></tr>'; return; }
+  let h='<tr><th>#</th><th class="l">order</th><th>size @ price</th><th>filled</th><th class="l">status</th><th class="l">queue ahead / at join</th><th>on book</th></tr>';
+  for(const o of [...O].reverse()){
+    const w=isWorking(o);
+    const qcell=!w?"":o.live
+      ?`<span class="qbar"><i style="width:${o.queue0>0?Math.max(2,100*(1-o.queue/o.queue0)).toFixed(0):100}%"></i></span>${shr(o.queue)} <span class="muted">/ ${shr(o.queue0)}</span>`
+      :'<span class="muted">in flight</span>';
+    h+=`<tr class="main ${w?"":"done"}" title="${esc(o.reason)}"><td>${o.id}</td>`
+      +`<td class="l">${tokTag(tokOf(o))}${o.token==="DOWN"?` <span class="muted" title="the same order on the mirrored Up book">= Up ask ${cents(o.price)}</span>`:""}</td>`
+      +`<td>${shr(o.size)} @ ${cents(tokOf(o).px)}</td><td>${o.filled?shr(o.filled):"—"}</td>`
+      +`<td class="l"><span class="st ${o.status}">${o.status}</span></td><td class="l">${qcell}</td>`
+      +`<td>${o.rest!=null?(o.rest/1000).toFixed(1)+" s":"—"}</td></tr>`
+      +`<tr class="why ${w?"":"done"}"><td></td><td colspan="6">${esc(o.reason)}</td></tr>`;
+  }
+  t.innerHTML=h;
+}
+
+// ---- blotter: newest first, appended incrementally ----
+const BLOT_MAX=400;
+function blotAdd(evs){
+  const tb=$("blot-body"), frag=document.createDocumentFragment();
+  let n=0;
+  for(const e of evs){
+    if(e.seq<=TRADE.lastSeq) continue;
+    TRADE.lastSeq=e.seq; n++;
+    if(e.oid!=null&&(e.type==="place"||e.type==="cancel"||e.type==="reject"||e.type==="cancelled")){ TRADE.ev.push(e); if(TRADE.ev.length>EV_KEEP) TRADE.ev.splice(0,TRADE.ev.length-EV_KEEP); }
+    const tr=document.createElement("tr");
+    const flow=e.type==="place"||e.type==="live"||e.type==="cancel"||e.type==="cancelled";
+    tr.className=(flow?"flow ":"")+"t-"+e.type;
+    if(e.oid!=null) tr.dataset.oid=e.oid;
+    const tk=e.side?tokOf(e):null;
+    const ord=tk?`${tokTag(tk)} ${e.size!=null?shr(e.size):""}${tk.px!=null?" @ "+cents(tk.px):""}`:`<span class="muted">${hhmm(e.win)} window</span>`;
+    tr.innerHTML=`<td class="l muted">${hms(e.t)}</td><td>${e.oid??""}</td><td class="l"><span class="ev ${e.type}">${e.type}</span></td><td class="l">${ord}</td><td class="note">${esc(e.note)}</td>`;
+    frag.prepend(tr);
+  }
+  if(!n) return;
+  tb.prepend(frag);
+  while(tb.children.length>BLOT_MAX) tb.lastChild.remove();
+  $("bl-sub").textContent=`· last ${tb.children.length} events`;
+}
+function blotFilter(){
+  const t=$("blot"), st={};
+  for(const k of ["flow","fill","rej","set"]){ st[k]=$("ck-bl-"+k).checked; t.classList.toggle("no"+k,!st[k]); }
+  try{ localStorage.setItem("mm.blot",JSON.stringify(st)); }catch{}
+}
+let blotHl=null;
+$("blot-body").addEventListener("mouseover",e=>{
+  const tr=e.target.closest("tr"), id=tr?tr.dataset.oid||null:null;
+  if(id===blotHl) return; blotHl=id;
+  for(const r of $("blot-body").children) r.classList.toggle("hl",!!id&&r.dataset.oid===id);
+});
+$("blot-body").addEventListener("mouseleave",()=>{ blotHl=null; for(const r of $("blot-body").children) r.classList.remove("hl"); });
+
+// ---- fills & markouts (this window, or the pinned replay) ----
+function renderFills(){
+  const F=pinned?((pinned.paper&&pinned.paper.fills)||[]):TRADE.fills, t=$("fills");
+  $("fl-sub").textContent=pinned?`· replay of ${pinned.meta.slug}`:"· this window";
+  if(!F.length){ t.innerHTML=`<tr><td class="l muted">${TRADE.mode==="shadow"?"shadow mode: no fills":pinned?"no paper fills recorded for this window":"no fills in this window yet"}</td></tr>`; return; }
+  let sz=0,e=0,eN=0,st=0,stN=0; const mk=[0,0,0],mkN=[0,0,0];
+  let body="";
+  for(const f of [...F].reverse()){
+    const ed=f.fv!=null?(f.side==="BUY"?1:-1)*(f.fv-f.price):null;
+    sz+=f.size; if(ed!=null){ e+=ed*f.size; eN+=f.size; }
+    for(let k=0;k<3;k++) if(f.mk&&f.mk[k]!=null){ mk[k]+=f.mk[k]*f.size; mkN[k]+=f.size; }
+    if(f.settle!=null){ st+=f.settle*f.size; stN+=f.size; }
+    const tf=tokOf(f);
+    body+=`<tr title="${esc(f.note)}"><td class="l muted">${hms(f.t)}</td><td class="l"><span class="${tf.tok==="Up"?"pos":"neg"}">${tf.side==="BUY"?"bought":"sold"} ${tf.tok}</span></td>`
+      +`<td>${shr(f.size)}</td><td>${cents(tf.px)}</td><td class="l muted">${f.via}</td><td>${pc(ed)}</td>`
+      +`${(f.mk||[null,null,null]).map(x=>`<td>${pc(x)}</td>`).join("")}<td>${pc(f.settle,0)}</td><td class="wrap">${esc(f.inv||"")}</td></tr>`;
+  }
+  const av=(a,b)=>b?pc(a/b,2):'<span class="muted">—</span>';
+  t.innerHTML='<tr><th class="l">time</th><th class="l">side</th><th>size</th><th>price</th><th class="l">via</th><th>edge</th><th>1 s</th><th>5 s</th><th>30 s</th><th>settle</th><th class="l">inventory</th></tr>'
+    +`<tr class="tot"><td class="l" colspan="2">${F.length} fill(s)</td><td>${shr(sz)}</td><td></td><td></td><td>${av(e,eN)}</td>${[0,1,2].map(k=>`<td>${av(mk[k],mkN[k])}</td>`).join("")}<td>${av(st,stN)}</td><td class="l muted">size-weighted</td></tr>`
+    +body;
+}
+
+// ---- equity: one step per settled window since the account started, plus the live (marked) value ----
+// The period (1h / 1d / 1w / 1m / all) cuts the curve at now − span: it starts from the equity held at the cut, and the
+// PnL, return and max drawdown count from there. A history shorter than the period shows whole, from the account's start.
+const EQ_SPAN={"1h":3600e3,"1d":86400e3,"1w":7*86400e3,"1m":30*86400e3,"all":null};
+let eqPer=(()=>{ try{ const p=localStorage.getItem("mm.eqper"); return p in EQ_SPAN?p:"all"; }catch{ return "all"; } })();
+function setEqPer(p){
+  eqPer=p; try{ localStorage.setItem("mm.eqper",p); }catch{}
+  for(const b of $("eq-per").children) b.classList.toggle("on",b.dataset.p===p);
+  drawEq();
+}
+function drawEq(){
+  const svg=$("eqsvg"); if(!TRADING(TRADE.mode)||!svg.isConnected) return;
+  const W=Math.max(200,Math.round(svg.clientWidth||600)), H=120, PADR=62, PADT=8, PADB=16;
+  const m0=v=>"$"+Math.round(v).toLocaleString();
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const A=TRADE.last&&TRADE.last.acct;
+  let start=A?A.start:((TRADE.cfg&&TRADE.cfg.start)||0);
+  let pts=(TRADE.eq||[]).slice();
+  if(A) pts.push([Date.now(),A.equity]);
+  const span=EQ_SPAN[eqPer], cut=span?Date.now()-span:null, cutting=cut!=null&&pts.length>0&&pts[0][0]<cut;
+  if(cutting){
+    let i=0; while(i+1<pts.length&&pts[i+1][0]<=cut) i++;   // the last step at or before the cut holds there
+    start=pts[i][1]; pts=[[cut,start],...pts.slice(i+1)];
+  }
+  if(pts.length<2){ $("eq-g").innerHTML=`<text class="btcmuted" x="8" y="${H/2}">no settled window yet</text>`; $("eq-txt").textContent=""; EQG=null; eqHover(); return; }
+  const t0=pts[0][0], t1=pts[pts.length-1][0];
+  $("eq-since").textContent=new Date(t0).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  let peak=-Infinity, dd=0; for(const p of pts){ if(p[1]>peak) peak=p[1]; if(peak-p[1]>dd) dd=peak-p[1]; }
+  const full=pts;   // every step, before the curve is thinned to the panel's width: the cursor reads a step's own change from it
+  if(pts.length>W){ const k=Math.ceil(pts.length/W); pts=pts.filter((_,i)=>i%k===0||i===pts.length-1); }
+  let lo=start,hi=start; for(const p of pts){ if(p[1]<lo) lo=p[1]; if(p[1]>hi) hi=p[1]; }
+  const pad=Math.max((hi-lo)*0.1,1); lo-=pad; hi+=pad;
+  const xOf=t=>((t-t0)/Math.max(1,t1-t0))*(W-PADR), yOf=v=>PADT+(1-(v-lo)/(hi-lo))*(H-PADT-PADB);
+  let d=`M${xOf(pts[0][0]).toFixed(1)},${yOf(pts[0][1]).toFixed(1)}`;
+  for(let i=1;i<pts.length;i++){ const x=xOf(pts[i][0]).toFixed(1); d+=`L${x},${yOf(pts[i-1][1]).toFixed(1)}L${x},${yOf(pts[i][1]).toFixed(1)}`; }
+  const end=pts[pts.length-1][1], col=end>=start?"var(--green)":"var(--red)", ys=yOf(start).toFixed(1);
+  let g=`<line x1="0" x2="${W-PADR}" y1="${ys}" y2="${ys}" stroke="var(--muted)" stroke-dasharray="4 4" opacity=".7"/>`
+    +`<text class="btcmuted" x="${W-PADR+6}" y="${(+ys+4).toFixed(1)}">${m0(start)}</text>`;
+  for(const v of [hi-pad,lo+pad]) if(Math.abs(yOf(v)-yOf(start))>12) g+=`<text class="btcmuted" x="${W-PADR+6}" y="${(yOf(v)+4).toFixed(1)}">${m0(v)}</text>`;
+  g+=`<path d="${d}L${xOf(t1).toFixed(1)},${ys}L${xOf(t0).toFixed(1)},${ys}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.8"/>`;
+  g+=`<circle cx="${xOf(t1).toFixed(1)}" cy="${yOf(end).toFixed(1)}" r="3.5" fill="${col}"/>`;
+  const tl=t=>t1-t0>86400e3?new Date(t).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):new Date(t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+  g+=`<text class="btcmuted" x="2" y="${H-3}">${tl(t0)}</text><text class="btcmuted" x="${W-PADR}" y="${H-3}" text-anchor="end">now</text>`;
+  $("eq-g").innerHTML=g;
+  EQG={pts,full,xOf,yOf,start,t0,W,H,PADR,PADT,PADB,tl,live:!!A}; eqHover();
+  const ret=start?(end-start)/start:0;
+  $("eq-txt").innerHTML=`<b>${money(end)}</b> · <span class="${end>=start?"pos":"neg"}">${usd(end-start)} (${ret>=0?"+":"−"}${Math.abs(ret*100).toFixed(1)}%)</span>${cutting?` in ${eqPer}`:""} · max DD ${m0(dd)}${end<=0.005?' · <span class="neg">bust — reset to trade</span>':""}`;
+}
+for(const b of $("eq-per").children) b.classList.toggle("on",b.dataset.p===eqPer);
+
+// ---- equity cursor: a crosshair on the curve with the equity held at that time. The curve is a step per settle, so the
+// cursor reads the last step at or before its time (the right edge is the live, marked value). drawEq repaints it on
+// every frame, so a cursor left standing keeps reading the curve as it moves under it.
+let EQG=null, eqX=null;   // the drawn curve's geometry · the cursor's x on the chart (null = not over it)
+function eqHover(){
+  const tip=$("eq-tip"), hair=$("eq-xhair"), dot=$("eq-xdot"), g=EQG; if(!tip) return;
+  const xr=g?g.W-g.PADR:0;
+  if(!g||eqX==null||eqX<0||eqX>xr+6){ tip.style.display=hair.style.display=dot.style.display="none"; return; }
+  const P=g.pts, n=P.length, t1=P[n-1][0];
+  let i=n-1, X=xr;
+  if(eqX<xr-4){
+    X=eqX; const t=g.t0+(X/Math.max(1,xr))*(t1-g.t0);
+    let lo=0, hi=n-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(P[m][0]<=t) lo=m; else hi=m-1; }
+    i=lo;
+  }
+  const p=P[i], v=p[1], live=g.live&&i===n-1, j=g.full.indexOf(p), q=j>0?g.full[j-1]:null, prev=q?q[1]:null;
+  const col=v>=g.start?"var(--green)":"var(--red)", cls=x=>x>=0?"pos":"neg", ret=g.start?(v-g.start)/g.start:0;
+  hair.setAttribute("x1",X); hair.setAttribute("x2",X); hair.setAttribute("y1",g.PADT); hair.setAttribute("y2",g.H-g.PADB); hair.style.display="";
+  dot.setAttribute("cx",X); dot.setAttribute("cy",g.yOf(v)); dot.setAttribute("fill",col); dot.style.display="";
+  tip.innerHTML=`<div class="p" style="color:${col}">${money(v)}</div>`
+    +`<div class="t"><span class="${cls(v-g.start)}">${usd(v-g.start)} (${ret>=0?"+":"−"}${Math.abs(ret*100).toFixed(1)}%)</span> since ${g.tl(g.t0)}</div>`
+    +(prev==null?"":`<div class="t">${live?"since the last settle":p[0]-q[0]<=450e3?"that settle":`since ${g.tl(q[0])}`} <span class="${cls(v-prev)}">${usd(v-prev)}</span></div>`)
+    +`<div class="t">${live?"now · marked":i===0?`${g.tl(p[0])} · start`:`settled ${g.tl(p[0])}`}</div>`;
+  tip.style.display="block";
+  const w=tip.offsetWidth, gap=12, left=X+gap+w<=$("eqwrap").clientWidth-2?X+gap:X-gap-w;
+  tip.style.left=Math.round(Math.max(2,left))+"px";
+}
+{ const svg=$("eqsvg");
+  svg.addEventListener("mousemove",e=>{ eqX=e.clientX-svg.getBoundingClientRect().left; eqHover(); });
+  svg.addEventListener("mouseleave",()=>{ eqX=null; eqHover(); }); }
+
+// ---- the dashboard's writes: reset the paper account, or reset PnL (paper or live) ----
+function rstToggle(on){
+  $("rst").style.display=on?"":"none"; $("rst-msg").textContent="";
+  if(on) rpToggle(false);
+  const A=TRADE.last&&TRADE.last.acct; if(on&&A) $("rst-amt").value=Math.round(A.start);
+}
+function rpToggle(on){
+  $("rp").style.display=on?"":"none"; $("rp-msg").textContent="";
+  if(!on) return;
+  rstToggle(false); wsToggle(false);
+  const T=TRADE.last||{}, A=T.acct, L=T.live;
+  $("rp-eq").textContent=A?` at equity ${money(A.equity)} (now ${usd(A.pnl)})`:"";
+  $("rp-live").innerHTML=T.mode==="live"?` <b>Live:</b> the loss limit${L&&L.maxLoss!=null?` −$${L.maxLoss}`:""} counts from here too${L&&L.halted?(/loss limit/.test(L.halted)?"; the loss-limit stop is lifted and trading resumes":"; the bot stays STOPPED until a restart (not a loss-limit stop)"):""}.`:"";
+}
+async function pnlReset(){
+  $("rp-go").disabled=true; $("rp-msg").textContent="resetting…";
+  try{
+    const r=await fetch("api/pnl/reset",{method:"POST"});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||r.status);
+    log(`<span class="pos">PnL reset to $0 at equity ${money(j.status.equity)}</span>`);
+    rpToggle(false); TRADE.eq=[]; if(j.status.agg) TRADE.agg=j.status.agg; TRADE.aggDirty=true; loadWindows();
+  }catch(e){ $("rp-msg").innerHTML=`<span class="neg">failed: ${esc(e.message)}</span>`; }
+  finally{ $("rp-go").disabled=false; }
+}
+async function wsToggle(on){
+  $("ws").style.display=on?"":"none"; $("ws-msg").textContent="";
+  if(!on) return;
+  rstToggle(false); rpToggle(false);
+  $("ws-go").disabled=true; $("ws-txt").textContent="reading the wallet…";
+  try{
+    const r=await fetch("api/live/wallet"); const j=await r.json();
+    if(!r.ok) throw new Error(j.error||r.status);
+    $("ws-txt").innerHTML=`Booked cash ${money(j.cash)}, wallet ${money(j.wallet)}: ${usd(j.d)} is booked as a ${j.d>=0?"deposit":"withdrawal"}. `+
+      `Cash and the start move together, so PnL and the loss limit stay as they are. Anything else trading from this wallet, and the maker rebate not yet paid, are absorbed into it.`+
+      (j.block?` <span class="neg">Not now: ${esc(j.block)}.</span>`:"");
+    $("ws-go").disabled=!!j.block;
+  }catch(e){ $("ws-txt").innerHTML=`<span class="neg">reading the wallet failed: ${esc(e.message)}</span>`; }
+}
+async function walletSync(){
+  $("ws-go").disabled=true; $("ws-msg").textContent="syncing…";
+  try{
+    const r=await fetch("api/live/sync",{method:"POST"}); const j=await r.json();
+    if(!r.ok) throw new Error(j.error||r.status);
+    log(`<span class="pos">synced to the wallet: cash ${money(j.before)} → ${money(j.wallet)} (${usd(j.d)})</span>`);
+    wsToggle(false); TRADE.eq=[]; loadWindows();
+  }catch(e){ $("ws-msg").innerHTML=`<span class="neg">failed: ${esc(e.message)}</span>`; $("ws-go").disabled=false; }
+}
+async function paperReset(){
+  const start=Number($("rst-amt").value);
+  if(!(start>=1&&start<=1e7)){ $("rst-msg").textContent="enter 1 to 10,000,000"; return; }
+  $("rst-go").disabled=true; $("rst-msg").textContent="resetting…";
+  try{
+    const r=await fetch("api/paper/reset",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({start})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||r.status);
+    log(`<span class="pos">paper account reset to ${money(start)}</span>`);
+    rstToggle(false); TRADE.eq=[]; TRADE.fills=[]; TRADE.fillsDirty=TRADE.aggDirty=true; loadWindows();
+  }catch(e){ $("rst-msg").innerHTML=`<span class="neg">failed: ${esc(e.message)}</span>`; }
+  finally{ $("rst-go").disabled=false; }
+}
+
+// ---- net position over the window, on the PM chart's time axis ----
+function drawInv(){
+  const svg=$("invsvg"), W=Math.max(320,Math.round(svg.clientWidth||600)), H=78, PADR=70, PADT=6, PADB=14;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const R=pinned?pinned.rows:LIVE.rows, max=(TRADE.cfg&&TRADE.cfg.maxPosition)||100;
+  let mx=max; if(C.inv!=null) for(const r of R){ const v=r[C.inv]; if(v!=null&&Math.abs(v)>mx) mx=Math.abs(v); }
+  const xOf=e=>((e-PMZ.from)/pmSpan())*(W-PADR), yOf=v=>PADT+(1-(v+mx)/(2*mx))*(H-PADT-PADB);
+  const cr=$("invcliprect"); cr.setAttribute("y",PADT); cr.setAttribute("width",Math.max(0,W-PADR)); cr.setAttribute("height",Math.max(0,H-PADT-PADB));
+  let g="";
+  for(const v of [max,0,-max]){
+    const y=yOf(v).toFixed(1);
+    g+=`<line x1="0" x2="${W-PADR}" y1="${y}" y2="${y}" stroke="${v?"var(--amber)":"var(--muted)"}" stroke-dasharray="${v?"3 4":"4 4"}" opacity="${v?.5:.7}"/>`
+     +`<text class="btcmuted" x="${W-PADR+6}" y="${(+y+4).toFixed(1)}">${v>0?"+":v<0?"−":""}${Math.abs(v)}</text>`;
+  }
+  $("inv-grid").innerHTML=g+timeGrid(xOf,H,PADT,PADB,W,PADR);
+  const lr=C.inv!=null?lastWith(R,C.inv):null;
+  $("inv-now").textContent=lr?`${pinned?"at the end":"now"} ${sgnSh(lr[C.inv])} sh`:"";
+  if(!lr){ $("inv-line").setAttribute("d",""); $("inv-area").setAttribute("d",""); return; }
+  const ss=segs(R,r=>r[C.inv],xOf,yOf), y0=yOf(0).toFixed(1);
+  $("inv-line").setAttribute("d",toD(ss));
+  $("inv-area").setAttribute("d",ss.map(sg=>sg.length?`M${sg[0][0].toFixed(1)},${y0}`+sg.map(p=>`L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("")+`L${sg[sg.length-1][0].toFixed(1)},${y0}Z`:"").join(""));
+}
+
+// ---- PAPER | LIVE switch: this dashboard and its twin's, the other mode of the same bot (api/twin, asked every 5 s) ----
+async function loadTwin(){
+  try{ const r=await fetch("api/twin"); if(r.ok) renderTwin(await r.json()); }catch{ /* this bot is down: keep the last */ }
+}
+function renderTwin(t){
+  const el=$("twin"); el.style.display=t?"":"none"; if(!t) return;
+  // on a port: the twin's port; behind nginx (mm.polytrader.fun/eth5m/): paper at <base>/, live at <base>/live/, the base
+  // being where this page is mounted (/ for a bot at the root)
+  const base=location.pathname.replace(/[^/]*$/,"").replace(/live\/$/,"");
+  const name=m=>m==="live"?"LIVE":"PAPER", href=location.port?`${location.protocol}//${location.hostname}:${t.port}/`:t.mode==="live"?base+"live/":base;
+  const dot=`<span class="dot" style="background:var(--${!t.up?"muted":t.halted?"amber":"green"})"></span>`;
+  const tip=t.up
+    ?`open the ${name(t.mode)} dashboard, ${href}${t.mode==="live"?" (REAL orders)":""} · equity ${t.equity!=null?money(t.equity):"?"} · PnL ${usd(t.pnl)}${t.halted?` · ${t.halted}`:""}`+
+     ` · from a laptop, forward port ${t.port} too (VS Code Ports panel)`
+    :`${name(t.mode)} is not running: ${t.why}. Start it with: ${t.start}`;
+  const cur=`<span class="on ${t.self}" title="this dashboard">${name(t.self)}</span>`;
+  const other=t.up?`<a href="${esc(href)}" title="${esc(tip)}">${name(t.mode)} ${dot}</a>`:`<span class="down" title="${esc(tip)}">${name(t.mode)} ${dot}</span>`;
+  el.innerHTML=t.self==="paper"?cur+other:other+cur;   // PAPER on the left either way
+}
+
+// ---- OWN | BASE | CHALLENGER switch (live only): which config the live bot follows (api/live/profile, src/profile.ts).
+// BASE = the paper bot's ({{APP}}-mm-bot), CHALLENGER = the paper challenger's, OWN = the live app's own; from the next window ----
+let PROF=null;
+const PROF_LBL={own:"OWN",base:"BASE",challenger:"CHALLENGER"};
+async function loadProf(fresh){
+  try{
+    const r=await fetch("api/live/profile"+(fresh?"?fresh=1":""));
+    PROF=r.ok?await r.json():null; renderProf();
+  }catch{ /* this bot is down: keep the last */ }
+}
+function renderProf(){
+  const el=$("prof"); el.style.display=PROF?"":"none"; if(!PROF) return;
+  const P=PROF, kv=k=>Object.entries(k).map(([a,b])=>`${a}=${b??"(default)"}`).join("\n");
+  let h=`<span class="lbl" title="which config the LIVE bot follows (the race / depth-cap rules, cancel-decision speed-ups, lock and stop, quote stop); a switch takes effect at the next window">CONFIG</span>`;
+  for(const p of ["own","base","challenger"]){
+    const d=P.profiles[p]||{}, on=P.active===p, pend=!!P.pending&&P.pending.name===p;
+    const tip=(p==="own"?"the live app's own config ({{APP}}-mm-live, as it booted)":`follow ${d.app}'s config (its ecosystem env, then .env)`)+
+      (on?` · ACTIVE${P.since?` since the ${new Date(P.since*1000).toISOString().slice(11,16)} UTC window`:""}`:"")+(pend?" · from the next window":"")+
+      "\n\n"+(d.knobs?kv(d.knobs):`unreadable: ${d.error}`)+
+      (d.diffs&&d.diffs.length?"\n\nnot followed (live keeps its own):\n"+d.diffs.map(x=>`${x.key}: live ${x.live??"(default)"} · ${p} ${x.other??"(default)"}`).join("\n"):"");
+    h+=`<a href="#" class="${on?"on live":pend?"pend":""}" title="${esc(tip)}" onclick="profPick('${p}');return false">${PROF_LBL[p]}${pend?" ⏳":""}</a>`;
+  }
+  el.innerHTML=h;
+}
+async function profPick(p){
+  if(!PROF||(PROF.active===p&&!PROF.pending)) return;
+  await loadProf(true);
+  const d=PROF&&PROF.profiles[p];
+  if(!d||!d.knobs){ alert(`Cannot read ${PROF_LBL[p]}'s config: ${d&&d.error}`); return; }
+  const ch=Object.keys(d.knobs).filter(k=>(PROF.now[k]??null)!==(d.knobs[k]??null)).map(k=>`  ${k}: ${PROF.now[k]??"(default)"} → ${d.knobs[k]??"(default)"}`);
+  const msg=PROF.active===p?`Cancel the pending switch and stay on ${PROF_LBL[p]}?`
+    :`LIVE bot (REAL orders): follow ${PROF_LBL[p]}${d.app?` (${d.app})`:""} from the next window?\n\n`+(ch.length?ch.join("\n"):"  no knob changes")+
+     (d.diffs.length?`\n\nNot followed (live keeps its own): ${d.diffs.map(x=>x.key).join(", ")}`:"");
+  if(!confirm(msg)) return;
+  try{
+    const r=await fetch("api/live/profile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({profile:p})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||r.status);
+    PROF=j.profile; renderProf();
+    log(`<span class="pos">config: ${PROF_LBL[p]}${PROF.active===p?" (no change)":" from the next window"}</span>`);
+  }catch(e){ log(`<span class="neg">config switch failed: ${esc(e.message)}</span>`); }
+}
+
+// ---- the header's STOP / START and the panel's ORDER SIZE switch (api/control, src/control.ts), paper or live.
+// Size 10 | 20 | 40 a side, cap 2× (20 / 40 / 80), from the next window; STOP cancels every working order at once ----
+let CTL=null;
+async function loadCtl(){
+  try{ const r=await fetch("api/control"); CTL=r.ok?await r.json():null; renderCtl(); }catch{ /* this bot is down: keep the last */ }
+}
+const utcHm=ts=>new Date(ts*1000).toISOString().slice(11,16);
+const sessTxt=x=>!x||x.label==null?"base size":x.stop?"STOP":`${x.size}/${x.cap}`;
+const sessHours=x=>x.def?"other hours":x.from===x.to?`${String(x.from).padStart(2,"0")}:00–${String(x.from).padStart(2,"0")}:59`:`${String(x.from).padStart(2,"0")}:00–${String(x.to).padStart(2,"0")}:59`;
+function renderCtl(){
+  const b=$("runbtn"), sg=$("sizeseg"), sp=$("pill-sess");
+  b.style.display=sg.style.display=CTL?"":"none"; if(!CTL){ sp.style.display="none"; return; }
+  const live=TRADE.mode==="live", S=CTL.session, sched=CTL.stopped&&!CTL.manualStop;
+  b.className="runbtn "+(CTL.stopped?"stopped":"run");
+  b.textContent=CTL.stopped?(sched?"▶ START · scheduled stop":"▶ START"):"■ STOP";
+  b.title=CTL.stopped?`${CTL.why}${CTL.halted?`\n\nthe bot's own stop still holds (START does not lift it):\n${CTL.halted}`:""}`
+    :`stop trading: every working order is cancelled now and no new one goes out; inventory is held and settles as usual${live?" (LIVE: REAL orders)":""}`+
+     (S&&S.startOver?`\n\ntrading through the scheduled stop of session ${S.label} (START) until ${S.until?utcHm(S.until):"it ends"} UTC`:"");
+  // the session pill: the session now, its size or STOP, when the next one starts; the whole schedule in the tooltip
+  sp.style.display=CTL.sessions||CTL.sessionError?"":"none";
+  if(CTL.sessions){
+    const cls=CTL.sessionError?"warn":S&&S.stop&&!S.startOver?"bad":"ok";
+    const now=S&&S.label!=null?`${S.label==="*"?"other hours":S.label+" UTC"} · ${S.sizeOver?`${S.sizeOver.size}/${S.sizeOver.cap} (dashboard)`:S.stop&&S.startOver?"STOP (overridden)":sessTxt(S)}`:"no session";
+    pill(sp,cls,`SESSION ${now}${S&&S.until?` → ${utcHm(S.until)} ${sessTxt(S.next)}`:""}`);
+    sp.title="MM_SESSIONS schedule (UTC hours, both ends included; size/cap a side · STOP = no orders):\n"+
+      CTL.sessions.list.map(x=>`${S&&S.label===x.label?"▶ ":"   "}${sessHours(x).padEnd(13)} ${sessTxt(x)}`).join("\n")+
+      `\n\nbase size (hours no entry names; the panel's choice outside a sized session): ${CTL.base.size}/${CTL.base.cap}`+
+      (CTL.sessionError?`\n\n⚠ the edited MM_SESSIONS is refused, the last good one runs: ${CTL.sessionError}`:"")+
+      "\n\nEdit MM_SESSIONS in ecosystem.config.cjs (this app's env) or .env: read again at every window, no restart.\n"+
+      "The SIZE switch overrides a session's size until it ends; START trades through a scheduled stop until it ends; STOP holds until START.";
+  } else if(CTL.sessionError){ pill(sp,"warn","SESSION ⚠"); sp.title=`MM_SESSIONS refused: ${CTL.sessionError}`; }
+  let h=`<span class="lbl" title="order size a side and the net position cap (MM_ORDER_SIZE / MM_MAX_POSITION); a switch takes effect at the next window${S&&S.size!=null&&!S.stop?" and lasts until the session ends":""}">SIZE</span>`;
+  for(const n of CTL.sizes){
+    const on=CTL.size===n&&CTL.cap===2*n, pend=!!CTL.pending&&CTL.pending.size===n;
+    const tip=`${n} sh a side, max position ${2*n}`+(on?` · ACTIVE${CTL.since?` since the ${utcHm(CTL.since)} UTC window`:""}`:"")+(pend?" · from the next window":"")+
+      (S&&S.size!=null&&!S.stop?`\nsession ${S.label}'s size is ${S.size}/${S.cap}: a switch overrides it until the session ends`:"")+
+      `\nenv: ${CTL.own.size} / ${CTL.own.cap} · base: ${CTL.base.size} / ${CTL.base.cap}`;
+    h+=`<a href="#" class="${on?"on "+(live?"live":"paper"):pend?"pend":""}" title="${esc(tip)}" onclick="ctlSize(${n});return false">${n}/${2*n}${pend?" ⏳":""}</a>`;
+  }
+  if(!CTL.sizes.some(n=>CTL.size===n&&CTL.cap===2*n)) h+=`<span class="on paper" title="the size now (not one of the switch's)">${CTL.size}/${CTL.cap}</span>`;
+  sg.innerHTML=h;
+}
+async function ctlPost(body){
+  const r=await fetch("api/control",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status);
+  CTL=j.control; renderCtl();
+}
+async function ctlSize(n){
+  if(!CTL) return;
+  const cur=CTL.size===n&&CTL.cap===2*n;
+  if(cur&&!CTL.pending) return;
+  const live=TRADE.mode==="live";
+  const S=CTL.session, inSess=S&&S.size!=null&&!S.stop;
+  const msg=cur?`Cancel the pending size switch and stay on ${n}/${2*n}?`
+    :`${live?"LIVE bot (REAL orders): o":"O"}rder size ${CTL.size} → ${n} sh a side, max position ${CTL.cap} → ${2*n}, from the next window`+
+     (inSess?` until session ${S.label} ends${S.until?` (${utcHm(S.until)} UTC)`:""}, then the schedule's size`:"")+"?";
+  if(!confirm(msg)) return;
+  try{ await ctlPost({size:n}); log(`<span class="pos">order size: ${n}/${2*n}${cur?" (no change)":" from the next window"}</span>`); }
+  catch(e){ log(`<span class="neg">size switch failed: ${esc(e.message)}</span>`); }
+}
+async function ctlRun(){
+  if(!CTL) return;
+  const live=TRADE.mode==="live", stop=!CTL.stopped;
+  const S=CTL.session, sched=CTL.stopped&&!CTL.manualStop;
+  const msg=stop?`STOP ${live?"the LIVE bot":"trading"}? Every working order is cancelled now and no new one goes out. Inventory is held and settles as usual. It stays stopped (a restart and the schedule too) until START.`
+    :(sched?`Session ${S.label} is a scheduled stop. START ${live?"the LIVE bot (REAL orders)":"trading"} through it until ${S.until?utcHm(S.until)+" UTC":"it ends"}?`
+      :`START ${live?"the LIVE bot (REAL orders)":"trading"}?`)+` Quoting resumes at ${CTL.size} sh a side, max position ${CTL.cap}.`+(CTL.halted?`\n\nNote: the bot's own stop still holds:\n${CTL.halted}`:"");
+  if(!confirm(msg)) return;
+  $("runbtn").disabled=true;
+  try{ await ctlPost({stopped:stop}); log(`<span class="${stop?"neg":"pos"}">${stop?"STOPPED from the dashboard":"STARTED from the dashboard"}</span>`); }
+  catch(e){ log(`<span class="neg">${stop?"stop":"start"} failed: ${esc(e.message)}</span>`); }
+  finally{ $("runbtn").disabled=false; }
+}
+
+// ---- boot ------------------------------------------------------------------------------------------
+for(const k in pmOn){ const ck=$("ck-pm-"+k); if(ck) ck.checked=!!pmOn[k]; }
+try{ const b=JSON.parse(localStorage.getItem("mm.blot")||"{}"); for(const k in b){ const ck=$("ck-bl-"+k); if(ck) ck.checked=!!b[k]; } }catch{}
+blotFilter();
+function renderUtcClock(){ const d=new Date(); $("utcclock").textContent=d.toISOString().slice(11,19)+" UTC"; }
+renderUtcClock(); setInterval(renderUtcClock,1000);
+setInterval(()=>{ if(!pinned) loadWindows(); },15000);
+connect(); loadWindows();
+loadTwin(); setInterval(loadTwin,5000);
+loadProf(); setInterval(loadProf,5000);
+loadCtl(); setInterval(loadCtl,3000);
+</script>
+</body>
+</html>
